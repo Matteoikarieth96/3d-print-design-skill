@@ -127,6 +127,13 @@ Details: [SECURITY.md](SECURITY.md).
   counterbores, inserts, teardrops, chamfers). Fillets, threads and organic
   shapes need your own code in the geometry block.
 
+## More skills
+
+- [evm-dd](https://github.com/Matteoikarieth96/evm-dd-skill): investor-angle due diligence on crypto and EVM projects, with a scored report and an A4 one-pager
+- [hiring-prep](https://github.com/Matteoikarieth96/hiring-prep-skill): an interview prep page from a company, a role and your resume, with an interactive test
+- [beer-can-label](https://github.com/Matteoikarieth96/beer-can-label-skill): full-wrap beer can labels with a 3D can preview
+- [whiteboard-video](https://github.com/Matteoikarieth96/whiteboard-video-skill): hand-drawn whiteboard explainer videos with voice-over
+
 ## Licence
 
 MIT, see [LICENSE](LICENSE).
