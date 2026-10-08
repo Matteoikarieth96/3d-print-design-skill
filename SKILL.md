@@ -63,11 +63,16 @@ geometry already passes the checks.
 
 ## Step 4: copy the template, edit the parameter block
 
-1. Project folder: the current directory if the user is in one, else
+1. Project folder: a fresh, empty folder, by default
    `~/3d-print-design/<part-name>/` (or `$PRINT3D_PROJECTS_DIR/<part-name>/`).
+   Never inside a downloaded or cloned repository or a folder of downloaded
+   files: Python code sitting next to (or above) a build script must never get
+   a chance to run. Copy any STL or drawing the user supplies INTO the project
+   folder as data; never run the build from where a download landed.
 2. Copy `"$SKILL/templates/build.py"` (or the chosen example's `build.py`) there.
-   Set `PRINT3D_SKILL_DIR="$SKILL"` when running it if the skill is not in
-   `~/.claude/skills/3d-print-design`.
+   The script only loads helpers from `$PRINT3D_SKILL_DIR/scripts` or
+   `~/.claude/skills/3d-print-design/scripts`; set `PRINT3D_SKILL_DIR="$SKILL"`
+   when the skill lives elsewhere.
 3. Edit ONLY the PARAMETERS block when adapting or iterating. Rules:
    - millimetres, Z up, the print orientation is the modelled orientation;
    - every number gets a comment saying why ("20 layers, stiff enough", "measured");
@@ -89,15 +94,17 @@ snap-fit strain, screw and insert holes, layer orientation.
 ## Step 5: build + printcheck (must pass)
 
 ```
-cd <project> && "$SKILL/.venv/bin/python" build.py
+cd <project> && PRINT3D_SKILL_DIR="$SKILL" "$SKILL/.venv/bin/python" -P build.py
 ```
 
-The harness runs `printcheck.check_printable` and writes `out/<name>.stl` and
+`-P` keeps the project folder off Python's import path (the script also
+removes it itself). The harness runs `printcheck.check_printable` and writes `out/<name>.stl` and
 `out/<name>.json` only if there are no errors. Read every warning and decide:
 fix it, or accept it and say so in the print sheet. Errors you will meet:
 not watertight, wrong body count (loose piece), not on the bed, too big for the
 bed, overhangs when supports are not allowed, failed probe points. To check an
-STL from elsewhere: `"$SKILL/.venv/bin/python" "$SKILL/scripts/printcheck.py" part.stl --bed 220x220x250 --layer 0.2 --overhang 45`.
+STL from elsewhere (data only, never run code that came with it):
+`"$SKILL/.venv/bin/python" -P "$SKILL/scripts/printcheck.py" part.stl --bed 220x220x250 --layer 0.2 --overhang 45`.
 
 ## Step 6: preview in the browser (local server, never file://)
 
@@ -128,11 +135,11 @@ If anything must press, snap, slide or rotate, and the project folder has no
 `fits.json`, offer the coupon first (about 30 to 45 minutes of printing):
 
 ```
-cd <project> && "$SKILL/.venv/bin/python" "$SKILL/scripts/calibration_coupon.py" build --out out
+cd <project> && "$SKILL/.venv/bin/python" -P "$SKILL/scripts/calibration_coupon.py" build --out out
 ```
 
 The user prints it without supports, tests the pegs, and you record the result:
-`"$SKILL/.venv/bin/python" "$SKILL/scripts/calibration_coupon.py" record --press 0.10 --snug 0.15 --sliding 0.20 --free 0.30 --overhang 45 --printer "..." --material PETG`.
+`"$SKILL/.venv/bin/python" -P "$SKILL/scripts/calibration_coupon.py" record --press 0.10 --snug 0.15 --sliding 0.20 --free 0.30 --overhang 45 --printer "..." --material PETG`.
 That writes `fits.json`, which `build.py` reads. How to read the notches:
 [references/calibration.md](references/calibration.md).
 

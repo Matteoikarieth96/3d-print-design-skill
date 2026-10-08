@@ -8,11 +8,15 @@
 What it does:
 - binds 127.0.0.1 only, on a free port (or --port), never a public address;
 - serves the viewer page plus the files of ONE folder (no subfolders, no
-  directory listing, no "..", no symlinks, only .stl .json .svg .png);
-- writes <folder>/manifest.json listing every STL with a colour and the bed
-  size, and refreshes it each time the page loads it;
+  directory listing, no "..", only .stl .json .svg .png). Each file is opened
+  with O_NOFOLLOW relative to a directory handle taken at start-up, then
+  fstat-checked: symlinks, hard links, FIFOs and other non-regular files are
+  refused, and there is no gap between the check and the read;
+- writes <folder>/manifest.json once at start-up (atomically, never through a
+  symlink); the page's /manifest.json is built in memory on each load, so new
+  builds show up on reload without writing to disk;
 - rejects requests whose Host header is not 127.0.0.1/localhost (blocks DNS
-  rebinding from web pages).
+  rebinding from web pages); drops idle connections after 15 seconds.
 
 It never contacts a printer and never sends anything anywhere: three.js is the
 only external file and the browser fetches it from cdnjs with an integrity hash.
@@ -22,7 +26,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shutil
+import stat
 import sys
 import threading
 import webbrowser
@@ -34,6 +41,7 @@ from urllib.parse import unquote, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import svg_preview  # noqa: E402  stdlib-only fallback renderer, used when WebGL is missing
+from safeio import atomic_write, safe_text  # noqa: E402
 
 HOST = "127.0.0.1"  # fixed on purpose: there is no option to listen on other interfaces
 VIEWER_DIR = Path(__file__).resolve().parent / "viewer"
@@ -55,55 +63,101 @@ BED_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*[xX]\s*(\d+
 PALETTE = ["#4f8cff", "#2bb673", "#e0a030", "#d9534f", "#8e6cf0", "#20a4b8", "#c2569b", "#7a8b99"]
 DEFAULT_BED = (220.0, 220.0, 250.0)
 MAX_FILE_BYTES = 300 * 1024 * 1024
+MAX_META_BYTES = 1024 * 1024
+THREE_URL = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
 
-PAGE_CSP = ("default-src 'none'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self'; "
+PAGE_CSP = (f"default-src 'none'; script-src 'self' {THREE_URL}; style-src 'self'; "
             "img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; "
             "frame-ancestors 'none'")
 FILE_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+
+O_NOFOLLOW = getattr(os, "O_NOFOLLOW", None)
+USE_DIR_FD = O_NOFOLLOW is not None and os.open in os.supports_dir_fd and hasattr(os, "O_DIRECTORY")
 
 
 def parse_bed(text: str) -> Tuple[float, float, float]:
     m = BED_RE.fullmatch(text or "")
     if not m:
-        raise ValueError(f"bed must look like 220x220x250, got {text!r}")
+        raise ValueError(f"bed must look like 220x220x250, got {safe_text(text, 40)!r}")
     dims = tuple(float(g) for g in m.groups())
     if not all(10 <= d <= 3000 for d in dims):
         raise ValueError("bed dimensions must be between 10 and 3000 mm")
     return dims  # type: ignore[return-value]
 
 
-def safe_child(folder: Path, name: str) -> Optional[Path]:
-    """Return folder/name if it is a plain, allowed file directly inside folder, else None."""
-    if not SAFE_FILE.fullmatch(name) or ".." in name:
+def allowed_name(name: str) -> bool:
+    return bool(SAFE_FILE.fullmatch(name)) and ".." not in name and Path(name).suffix.lower() in FILE_TYPES
+
+
+def open_child(folder: Path, name: str, dir_fd: Optional[int] = None, max_bytes: int = MAX_FILE_BYTES):
+    """Open a plain file directly inside `folder` for reading, or return None.
+
+    O_NOFOLLOW refuses a symlink as the last component; opening relative to
+    `dir_fd` pins the directory itself; O_NONBLOCK keeps a FIFO from hanging
+    the server. fstat on the open descriptor then requires a regular file
+    with a single link (no hard link to a file elsewhere) within the size cap.
+    Returns (binary file object, size); the caller closes it.
+    """
+    if not allowed_name(name):
         return None
-    if Path(name).suffix.lower() not in FILE_TYPES:
-        return None
-    candidate = folder / name
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
     try:
-        if candidate.is_symlink():
+        if O_NOFOLLOW is not None:
+            flags |= O_NOFOLLOW
+            if dir_fd is not None and USE_DIR_FD:
+                fd = os.open(name, flags, dir_fd=dir_fd)
+            else:
+                fd = os.open(os.path.join(folder, name), flags)
+        else:  # no O_NOFOLLOW (Windows): fall back to a resolve check
+            candidate = Path(folder) / name
+            if candidate.is_symlink() or candidate.resolve().parent != Path(folder).resolve():
+                return None
+            fd = os.open(candidate, flags)
+    except OSError:
+        return None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or st.st_size > max_bytes:
+            os.close(fd)
             return None
-        resolved = candidate.resolve(strict=True)
-    except (FileNotFoundError, OSError, RuntimeError):
-        return None
-    if resolved.parent != folder or not resolved.is_file():
-        return None
-    return resolved
+        return os.fdopen(fd, "rb"), st.st_size
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _list_names(folder: Path, dir_fd: Optional[int]):
+    try:
+        if dir_fd is not None and os.listdir in os.supports_fd:
+            return sorted(os.listdir(dir_fd))
+        return sorted(os.listdir(folder))
+    except OSError:
+        return []
 
 
 def build_manifest(folder: Path, bed: Optional[Sequence[float]] = None,
-                   colors: Optional[Dict[str, str]] = None) -> dict:
+                   colors: Optional[Dict[str, str]] = None, dir_fd: Optional[int] = None) -> dict:
     colors = colors or {}
     parts = []
     found_bed = None
-    stls = sorted(p for p in folder.iterdir() if p.suffix.lower() == ".stl" and safe_child(folder, p.name))
-    for i, stl in enumerate(stls):
-        stem = stl.stem
+    stls = []
+    for name in _list_names(folder, dir_fd):
+        if not name.lower().endswith(".stl"):
+            continue
+        opened = open_child(folder, name, dir_fd)
+        if opened:
+            opened[0].close()
+            stls.append(name)
+    for i, fname in enumerate(stls):
+        stem = fname[:-4]
         color = colors.get(stem)
         meta = {}
-        meta_path = safe_child(folder, f"{stem}.json")
-        if meta_path:
+        opened = open_child(folder, f"{stem}.json", dir_fd, max_bytes=MAX_META_BYTES)
+        if opened:
+            fh, _ = opened
             try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                with fh:
+                    meta = json.loads(fh.read().decode("utf-8"))
                 if not isinstance(meta, dict):
                     meta = {}
             except (ValueError, OSError):
@@ -118,24 +172,60 @@ def build_manifest(folder: Path, bed: Optional[Sequence[float]] = None,
                     found_bed = cand
             except (TypeError, ValueError):
                 pass
-        parts.append({"file": stl.name, "name": stem, "color": color})
+        parts.append({"file": fname, "name": stem, "color": color})
     bed_dims = tuple(bed) if bed else (found_bed or DEFAULT_BED)
     return {"bed": list(bed_dims), "parts": parts}
+
+
+class PreviewServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, address, handler, folder: Path, bed, colors, quiet: bool):
+        self.folder = folder
+        self.bed = bed
+        self.colors = dict(colors or {})
+        self.quiet = quiet
+        self.dir_fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY) if USE_DIR_FD else None
+        try:
+            super().__init__(address, handler)
+        except BaseException:
+            self._close_dir()
+            raise
+
+    def _close_dir(self):
+        if self.dir_fd is not None:
+            try:
+                os.close(self.dir_fd)
+            except OSError:
+                pass
+            self.dir_fd = None
+
+    def server_close(self):
+        super().server_close()
+        self._close_dir()
+
+    def manifest(self) -> dict:
+        return build_manifest(self.folder, self.bed, self.colors, self.dir_fd)
 
 
 class PreviewHandler(BaseHTTPRequestHandler):
     server_version = "print-preview"
     sys_version = ""
+    timeout = 15  # seconds; a stalled client cannot pin a thread forever
 
-    # set by make_server
-    folder: Path
-    bed: Optional[Sequence[float]] = None
-    colors: Dict[str, str] = {}
-    quiet = False
+    def log_message(self, fmt, *args):  # tidy, sanitised, never logs query strings
+        if getattr(self.server, "quiet", False):
+            return
+        command = safe_text(getattr(self, "command", None) or "-", 10)
+        path = safe_text(urlsplit(getattr(self, "path", "") or "").path, 120)
+        sys.stderr.write(f"serve: {command} {path} -> {safe_text(args[1] if len(args) > 1 else '', 10)}\n")
 
-    def log_message(self, fmt, *args):  # keep the terminal tidy, never log query strings
-        if not self.quiet:
-            sys.stderr.write(f"serve: {self.command} {urlsplit(self.path).path} -> {args[1] if len(args) > 1 else ''}\n")
+    def send_error(self, code, message=None, explain=None):  # used by the base class on bad requests
+        self.close_connection = True
+        try:
+            self._error(code)
+        except Exception:
+            pass
 
     def _headers(self, status: int, ctype: str, length: int, csp: str) -> None:
         self.send_response(status)
@@ -169,40 +259,42 @@ class PreviewHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         if not self._host_ok():
             return self._error(403)
-        raw_path = urlsplit(self.path).path
-        path = unquote(raw_path)
+        path = unquote(urlsplit(self.path).path)
         if "\x00" in path or "\\" in path or ".." in path or "//" in path:
             return self._error(400)
         if path in VIEWER_FILES:
             fname, ctype = VIEWER_FILES[path]
             body = (VIEWER_DIR / fname).read_bytes()
             return self._send(200, body, ctype, PAGE_CSP)
-        if path == "/manifest.json":
-            manifest = build_manifest(self.folder, self.bed, self.colors)
-            body = json.dumps(manifest, indent=2).encode()
-            try:
-                (self.folder / "manifest.json").write_bytes(body + b"\n")
-            except OSError:
-                pass
+        if path == "/manifest.json":  # built in memory, never written here
+            body = json.dumps(self.server.manifest(), indent=2).encode()
             return self._send(200, body, "application/json")
         if path.startswith("/files/"):
             name = path[len("/files/"):]
-            if "/" in name:
+            opened = open_child(self.server.folder, name, self.server.dir_fd) if "/" not in name else None
+            if opened is None:
                 return self._error(404)
-            target = safe_child(self.folder, name)
-            if target is None or target.stat().st_size > MAX_FILE_BYTES:
-                return self._error(404)
-            body = target.read_bytes()
-            return self._send(200, body, FILE_TYPES[target.suffix.lower()])
+            fh, size = opened
+            with fh:
+                self._headers(200, FILE_TYPES[Path(name).suffix.lower()], size, FILE_CSP)
+                if self.command != "HEAD":
+                    shutil.copyfileobj(fh, self.wfile, 256 * 1024)
+            return None
         if path.startswith("/preview/") and path.endswith(".svg"):
             stem = path[len("/preview/"):-len(".svg")]
-            stl = safe_child(self.folder, f"{stem}.stl") if "/" not in stem else None
-            if stl is None:
+            opened = None
+            if "/" not in stem:
+                opened = open_child(self.server.folder, f"{stem}.stl", self.server.dir_fd,
+                                    max_bytes=svg_preview.MAX_STL_BYTES)
+            if opened is None:
                 return self._error(404)
+            fh, _ = opened
             try:
-                part = next((p for p in build_manifest(self.folder, self.bed, self.colors)["parts"]
-                             if p["name"] == stem), None)
-                svg = svg_preview.render_svg(stl, color=(part or {}).get("color", PALETTE[0]), title=stem)
+                with fh:
+                    part = next((p for p in self.server.manifest()["parts"] if p["name"] == stem), None)
+                    svg = svg_preview.render_svg(fh, color=(part or {}).get("color", PALETTE[0]), title=stem)
+            except ValueError:
+                return self._error(413)
             except Exception:
                 return self._error(500)
             return self._send(200, svg.encode(), "image/svg+xml")
@@ -216,19 +308,20 @@ class PreviewHandler(BaseHTTPRequestHandler):
 
 def make_server(folder, port: int = 0, bed: Optional[Sequence[float]] = None,
                 colors: Optional[Dict[str, str]] = None, quiet: bool = False):
-    """Create (not start) the server. Returns (server, url)."""
+    """Create (not start) the server and write manifest.json. Returns (server, url)."""
     root = Path(folder).expanduser().resolve(strict=True)
     if not root.is_dir():
-        raise ValueError(f"not a folder: {root}")
+        raise ValueError(f"not a folder: {safe_text(root)}")
     for name, color in (colors or {}).items():
         if not HEX_COLOR.fullmatch(color) or not SAFE_FILE.fullmatch(name):
-            raise ValueError(f"bad colour mapping {name}={color}: use part-name=#rrggbb")
-    handler = type("BoundPreviewHandler", (PreviewHandler,),
-                   {"folder": root, "bed": bed, "colors": dict(colors or {}), "quiet": quiet})
-    server = ThreadingHTTPServer((HOST, int(port)), handler)
-    server.daemon_threads = True
-    manifest = build_manifest(root, bed, colors)
-    (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+            raise ValueError(f"bad colour mapping {safe_text(name, 40)}={safe_text(color, 20)}: "
+                             "use part-name=#rrggbb")
+    server = PreviewServer((HOST, int(port)), PreviewHandler, root, bed, colors, quiet)
+    try:
+        atomic_write(root / "manifest.json", json.dumps(server.manifest(), indent=2) + "\n")
+    except BaseException:
+        server.server_close()
+        raise
     url = f"http://{HOST}:{server.server_address[1]}/"
     return server, url
 
@@ -258,10 +351,10 @@ def main(argv=None) -> int:
             raise ValueError("port must be 0..65535")
         server, url = make_server(args.folder, port=args.port, bed=bed, colors=colors)
     except (ValueError, OSError) as exc:
-        print(f"serve: {exc}", file=sys.stderr)
+        print(f"serve: {safe_text(exc)}", file=sys.stderr)
         return 2
-    n = len(build_manifest(Path(args.folder).resolve(), bed, colors)["parts"])
-    print(f"serving {n} STL file(s) from {Path(args.folder).resolve()}")
+    n = len(server.manifest()["parts"])
+    print(f"serving {n} STL file(s) from {safe_text(server.folder)}")
     print(f"open {url}  (Ctrl+C to stop)")
     if args.open:
         webbrowser.open(url)

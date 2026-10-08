@@ -21,10 +21,12 @@ PETG; single colour; no supports; quantity 4; balanced looks and strength.
 - Probe points: the channel wall must be solid; the cavity and both screw axes
   must be empty.
 
-**Build and preview** (from this folder, with the repo's venv):
+**Build and preview** (from this folder, with the repo's venv). Build scripts
+never look for helper code in the folders around them, so name the skill
+folder explicitly:
 
 ```
-../../.venv/bin/python build.py
+PRINT3D_SKILL_DIR="$(cd ../.. && pwd)" ../../.venv/bin/python -P build.py
 python3 ../../scripts/serve.py out --open
 ```
 

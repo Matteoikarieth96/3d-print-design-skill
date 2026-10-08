@@ -5,10 +5,10 @@ A plate screwed under a desk edge with two countersunk screws, carrying a
 snap-in channel for a cable bundle. Built from templates/build.py: only the
 PARAMETERS and GEOMETRY blocks differ from the template.
 
-
-Copy this file into your project folder, then:
-    python build.py            -> runs printcheck, writes out/<NAME>.stl + out/<NAME>.json
-    python build.py --check    -> runs printcheck only, writes nothing
+Run it from this folder with the skill named explicitly (build scripts
+never search folders around the project for code):
+    PRINT3D_SKILL_DIR="$(cd ../.. && pwd)" ../../.venv/bin/python -P build.py
+    (add --check to run printcheck only and write nothing)
 
 Three zones:
   PARAMETERS  every number lives here, in millimetres, each with a comment
@@ -20,21 +20,35 @@ Three zones:
 Units: mm. Z is up. The part must sit on z = 0 in its print orientation.
 This script never contacts a printer; slicing and printing are your steps.
 """
-import argparse
 import os
 import sys
-from pathlib import Path
+
+# Never import code from the project folder. Python puts this script's folder
+# first on sys.path, so a planted argparse.py, pathlib.py or cad.py next to
+# build.py would run. os and sys are already loaded by the interpreter, so this
+# runs before anything that could be shadowed. (`python -P build.py` does the
+# same; this keeps plain `python build.py` safe too.)
+if not getattr(sys.flags, "safe_path", False):
+    _HERE = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
+    sys.path[:] = [p for p in sys.path if os.path.realpath(p or os.getcwd()) != _HERE]
+
+import argparse  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 
 def _skill_scripts() -> Path:
-    """Find the skill's scripts/ folder (cad.py + printcheck.py)."""
-    here = Path(__file__).resolve().parent
+    """Find the skill's scripts/ folder (cad.py + printcheck.py).
+
+    Only two places are trusted: $PRINT3D_SKILL_DIR/scripts and the installed
+    skill in ~/.claude/skills/3d-print-design/scripts. Folders around the
+    project are never searched, so a repository or download folder that
+    happens to contain a scripts/cad.py cannot inject code.
+    """
     candidates = []
     env = os.environ.get("PRINT3D_SKILL_DIR")
     if env:
-        candidates.append(Path(env).expanduser() / "scripts")
-    candidates += [here.parent / "scripts", here.parent.parent / "scripts",
-                   Path.home() / ".claude" / "skills" / "3d-print-design" / "scripts"]
+        candidates.append(Path(env).expanduser().resolve() / "scripts")
+    candidates.append(Path.home() / ".claude" / "skills" / "3d-print-design" / "scripts")
     for c in candidates:
         if (c / "cad.py").is_file() and (c / "printcheck.py").is_file():
             return c.resolve()
@@ -44,6 +58,7 @@ def _skill_scripts() -> Path:
 sys.path.insert(0, str(_skill_scripts()))
 import cad  # noqa: E402
 import printcheck  # noqa: E402
+from safeio import safe_text  # noqa: E402
 
 PROJECT_DIR = Path(__file__).resolve().parent
 FITS = cad.load_fits(PROJECT_DIR)  # per-side clearances: fits.json if present, else defaults
@@ -134,7 +149,7 @@ def main(argv=None) -> int:
         name = cad.validate_name(g["NAME"])
         out_dir = cad.safe_out_dir(PROJECT_DIR, args.out)
     except ValueError as exc:
-        print(f"refusing: {exc}", file=sys.stderr)
+        print(f"refusing: {safe_text(exc)}", file=sys.stderr)
         return 2
 
     parts = build_part()
@@ -145,7 +160,7 @@ def main(argv=None) -> int:
         try:
             part_name = name if not suffix else cad.validate_name(f"{name}-{suffix}")
         except ValueError as exc:
-            print(f"refusing: {exc}", file=sys.stderr)
+            print(f"refusing: {safe_text(exc)}", file=sys.stderr)
             return 2
         mesh = cad.to_trimesh(solid)
         res = printcheck.check_printable(
@@ -170,8 +185,12 @@ def main(argv=None) -> int:
     params = cad.param_snapshot(g)
     params["FITS"] = FITS
     for part_name, suffix, mesh, res in results:
-        stl, meta = cad.write_part(out_dir, part_name, mesh, res, material=g["MATERIAL"], params=params,
-                                   color=_per_part(g.get("COLOR"), suffix), bed=g["PRINTER_BED"])
+        try:
+            stl, meta = cad.write_part(out_dir, part_name, mesh, res, material=g["MATERIAL"], params=params,
+                                       color=_per_part(g.get("COLOR"), suffix), bed=g["PRINTER_BED"])
+        except (ValueError, OSError) as exc:
+            print(f"refusing: {safe_text(exc)}", file=sys.stderr)
+            return 2
         print(f"wrote {stl.relative_to(PROJECT_DIR)} and {meta.relative_to(PROJECT_DIR)}")
     return 0
 

@@ -1,7 +1,7 @@
 {
   "name": "calibration-coupon",
   "units": "mm",
-  "generated_utc": "2026-10-08T10:09:41+00:00",
+  "generated_utc": "2026-10-08T11:36:45+00:00",
   "generator": "3d-print-design build script",
   "stl": "calibration-coupon.stl",
   "stl_sha256": "ef379e59fcaaad13650bdd4b1bf1264bb0cb3c22238b56e7e16e2ffb65371d8d",
@@ -103,6 +103,7 @@
           "bridge_area_mm2": 0.0,
           "max_bridge_mm": 10.0,
           "flat_regions": [],
+          "wide_regions_not_measured": 0,
           "faces": 4,
           "bbox_min": [
             110.4,
@@ -308,7 +309,8 @@
                 1.76
               ]
             }
-          ]
+          ],
+          "sections_skipped": []
         }
       },
       {
@@ -318,6 +320,7 @@
         "data": {
           "limit_mm": 0.8,
           "samples": 300,
+          "samples_asked": 300,
           "measured": 300,
           "thin_samples": 0,
           "min_thickness_mm": 0.868
