@@ -1,0 +1,7 @@
+# Geometry stack for build scripts, printcheck and the calibration coupon.
+# serve.py, svg_preview.py and render_png.py need only the standard library.
+# Wheels exist for CPython 3.11 to 3.14 on Linux, macOS and Windows.
+numpy==2.4.6
+trimesh==5.1.1
+manifold3d==3.5.4
+shapely==2.2.0

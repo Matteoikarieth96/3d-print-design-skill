@@ -1,0 +1,15 @@
+{
+  "printer": "example printer, 0.4 nozzle",
+  "material": "PETG",
+  "nozzle_mm": 0.4,
+  "layer_mm": 0.2,
+  "measured": "2026-10-08",
+  "clearance_per_side": {
+    "press": 0.1,
+    "snug": 0.15,
+    "sliding": 0.2,
+    "free": 0.3
+  },
+  "overhang_ok_deg": 45,
+  "note": "fictional example values; print the calibration coupon and record your own"
+}
