@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part Preview</title>
+<link rel="stylesheet" href="/viewer.css">
+<!-- three.js r128 (MIT) from cdnjs with an integrity hash; everything else is local -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+        integrity="sha512-dLxUelApnYxpLt6K2iomGngnHO83iUvZytA3YjDUCjT0HDOHKXnVYdf3hU4JjM8uEhxf9nD1/ey98U3t2vZ0qQ=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="/viewer.js" defer></script>
+</head>
+<body data-render="loading">
+<div id="stage" aria-label="3D preview"></div>
+<aside id="panel">
+  <header>
+    <h1>Part preview</h1>
+    <button id="theme" type="button" title="Toggle dark or light">Theme</button>
+  </header>
+  <p id="status" role="status">Loading...</p>
+  <section>
+    <h2>Parts</h2>
+    <ul id="parts"></ul>
+  </section>
+  <section>
+    <h2>Size (bounding box, mm)</h2>
+    <table id="dims"><thead><tr><th>Part</th><th>X</th><th>Y</th><th>Z</th></tr></thead><tbody></tbody></table>
+  </section>
+  <section>
+    <h2>View</h2>
+    <div class="row">
+      <button type="button" data-view="iso">Iso</button>
+      <button type="button" data-view="top">Top</button>
+      <button type="button" data-view="front">Front</button>
+      <button type="button" data-view="right">Right</button>
+    </div>
+    <label class="check"><input type="checkbox" id="edges" checked> Edges</label>
+    <label class="check"><input type="checkbox" id="volume"> Build volume</label>
+  </section>
+  <section>
+    <h2>Section</h2>
+    <label class="check"><input type="checkbox" id="section"> Cut the parts</label>
+    <div class="row">
+      <select id="axis" aria-label="Section axis">
+        <option value="x">X</option><option value="y" selected>Y</option><option value="z">Z</option>
+      </select>
+      <input type="range" id="cut" min="0" max="1000" value="500" aria-label="Section position">
+    </div>
+    <p id="cutpos" class="muted"></p>
+  </section>
+  <p class="muted">Drag to orbit, right-drag or Shift+drag to pan, wheel or pinch to zoom.
+    Preview only: slice and print in your own slicer.</p>
+</aside>
+<div id="fallback" hidden>
+  <p id="fallback-msg"></p>
+  <div id="fallback-imgs"></div>
+</div>
+</body>
+</html>
