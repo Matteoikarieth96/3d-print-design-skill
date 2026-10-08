@@ -29,6 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import serve  # noqa: E402
 import svg_preview  # noqa: E402
+from safeio import atomic_write, safe_text  # noqa: E402
 
 MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 SIZE_RE = re.compile(r"^(\d{3,4})x(\d{3,4})$")
@@ -110,51 +111,73 @@ def render(folder, out, view="iso", theme="light", size="1400x900", section=None
         raise ValueError("theme must be light or dark")
     if section not in (None, "x", "y", "z"):
         raise ValueError("section must be x, y or z")
-    out = Path(out).resolve()
+    out = Path(os.path.abspath(out))  # abspath, not resolve: a symlink must not be followed
     if out.suffix.lower() != ".png":
         raise ValueError("--out must end with .png")
+    svg_out = out.with_suffix(".svg")
+    for target in (out, svg_out):
+        if target.is_symlink():
+            raise ValueError(f"refusing to write through a symlink: {safe_text(target)}")
     out.parent.mkdir(parents=True, exist_ok=True)
     chrome = find_chrome()
     server, url = serve.serve_in_thread(folder, quiet=True)
     try:
-        query = f"?ui=1&view={view}&theme={theme}" + (f"&section={section}" if section else "")
-        method = "svg-fallback"
-        if chrome and not force_svg:
-            with tempfile.TemporaryDirectory() as profile:
-                base = _chrome_args(chrome, profile, w, h)
-                dom = _run_until(base + ["--dump-dom", url + query], lambda t: "</html>" in t, timeout)
-                state = re.search(r'<body[^>]*data-render="([a-z-]+)"', dom)
-                if state and state.group(1) == "ok":
-                    if out.exists():
-                        out.unlink()
-                    _run_until(base + [f"--screenshot={out}", url + query], _png_ready(out), timeout)
-                    if out.is_file() and out.stat().st_size > 5000:
-                        method = "webgl"
-        if method != "webgl":
-            manifest = serve.build_manifest(Path(folder).resolve())
-            stls = [Path(folder).resolve() / p["file"] for p in manifest["parts"]]
-            if not stls:
-                raise ValueError("no STL files in the folder")
-            svg = svg_preview.render_svg(stls, colors=[p["color"] for p in manifest["parts"]],
-                                         title=", ".join(p["name"] for p in manifest["parts"])[:80],
-                                         view=view, width=w, height=h,
-                                         background="#14181f" if theme == "dark" else "#f6f7f9")
-            svg_path = out.with_suffix(".svg")
-            svg_path.write_text(svg, encoding="utf-8")
-            if chrome:
-                if out.exists():
-                    out.unlink()
+        with tempfile.TemporaryDirectory() as work:
+            shot = Path(work) / "shot.png"  # Chrome writes here; we move it into place ourselves
+            query = f"?ui=1&view={view}&theme={theme}" + (f"&section={section}" if section else "")
+            method = "svg-fallback"
+            if chrome and not force_svg:
                 with tempfile.TemporaryDirectory() as profile:
-                    _run_until(_chrome_args(chrome, profile, w, h) + [f"--screenshot={out}", svg_path.as_uri()],
-                               _png_ready(out), timeout)
-            if not out.is_file():
-                return "svg-only", svg_path
-        if out.stat().st_size > 600 * 1024 and shutil.which("sips"):
-            subprocess.run(["sips", "-Z", "1600", str(out)], capture_output=True, check=False)
-        return method, out
+                    base = _chrome_args(chrome, profile, w, h)
+                    dom = _run_until(base + ["--dump-dom", url + query], lambda t: "</html>" in t, timeout)
+                    state = re.search(r'<body[^>]*data-render="([a-z-]+)"', dom)
+                    if state and state.group(1) == "ok":
+                        _run_until(base + [f"--screenshot={shot}", url + query], _png_ready(shot), timeout)
+                        if shot.is_file() and shot.stat().st_size > 5000:
+                            method = "webgl"
+            if method != "webgl":
+                svg = _fallback_svg(server, view, theme, w, h)
+                if not chrome:
+                    atomic_write(svg_out, svg)
+                    return "svg-only", svg_out
+                svg_tmp = Path(work) / "preview.svg"
+                svg_tmp.write_text(svg, encoding="utf-8")
+                with tempfile.TemporaryDirectory() as profile:
+                    _run_until(_chrome_args(chrome, profile, w, h) + [f"--screenshot={shot}", svg_tmp.as_uri()],
+                               _png_ready(shot), timeout)
+                if not shot.is_file():
+                    atomic_write(svg_out, svg)
+                    return "svg-only", svg_out
+            if shot.stat().st_size > 600 * 1024 and shutil.which("sips"):
+                subprocess.run(["sips", "-Z", "1600", str(shot)], capture_output=True, check=False)
+            atomic_write(out, shot.read_bytes())  # never through a symlink
+            return method, out
     finally:
         server.shutdown()
         server.server_close()
+
+
+def _fallback_svg(server, view, theme, w, h) -> str:
+    """SVG of every STL in the served folder, with the same caps as svg_preview."""
+    manifest = server.manifest()
+    if not manifest["parts"]:
+        raise ValueError("no STL files in the folder")
+    handles = []
+    try:
+        for part in manifest["parts"]:
+            opened = serve.open_child(server.folder, part["file"], server.dir_fd,
+                                      max_bytes=svg_preview.MAX_STL_BYTES)
+            if opened is None:
+                raise ValueError(f"{safe_text(part['file'])}: unreadable or larger than "
+                                 f"{svg_preview.MAX_STL_BYTES // (1024 * 1024)} MB for the SVG fallback")
+            handles.append(opened[0])
+        return svg_preview.render_svg(handles, colors=[p["color"] for p in manifest["parts"]],
+                                      title=", ".join(p["name"] for p in manifest["parts"])[:80],
+                                      view=view, width=w, height=h,
+                                      background="#14181f" if theme == "dark" else "#f6f7f9")
+    finally:
+        for fh in handles:
+            fh.close()
 
 
 def main(argv=None) -> int:
@@ -171,16 +194,16 @@ def main(argv=None) -> int:
         method, path = render(args.folder, args.out, view=args.view, theme=args.theme, size=args.size,
                               section=args.section, force_svg=args.svg)
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
-        print(f"render_png: {exc}", file=sys.stderr)
+        print(f"render_png: {safe_text(exc)}", file=sys.stderr)
         return 2
     if method == "webgl":
-        print(f"wrote {path} (WebGL viewer)")
+        print(f"wrote {safe_text(path)} (WebGL viewer)")
     elif method == "svg-fallback" and args.svg:
-        print(f"wrote {path} (SVG orthographic picture, as asked)")
+        print(f"wrote {safe_text(path)} (SVG orthographic picture, as asked)")
     elif method == "svg-fallback":
-        print(f"wrote {path} (WebGL did not render headless: SVG orthographic fallback)")
+        print(f"wrote {safe_text(path)} (WebGL did not render headless: SVG orthographic fallback)")
     else:
-        print(f"wrote {path} only: Chrome not found, so no PNG (open the SVG in a browser)")
+        print(f"wrote {safe_text(path)} only: no PNG (Chrome missing or failed); open the SVG in a browser")
     return 0
 
 

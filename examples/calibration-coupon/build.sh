@@ -6,4 +6,4 @@ root=$(cd "$here/../.." && pwd)
 py="$root/.venv/bin/python"
 [ -x "$py" ] || py=python3
 cd "$here"
-"$py" "$root/scripts/calibration_coupon.py" build --out out
+"$py" -P "$root/scripts/calibration_coupon.py" build --out out

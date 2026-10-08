@@ -32,6 +32,9 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from safeio import safe_text  # noqa: E402
+
 try:  # trimesh and shapely are required for the full check set
     import trimesh
     import trimesh.intersections
@@ -99,7 +102,7 @@ class CheckResult:
 
     def summary(self, title: str = "part") -> str:
         icon = {PASS: "PASS", WARN: "WARN", FAIL: "FAIL", SKIP: "skip"}
-        lines = [f"printcheck: {title}"]
+        lines = [f"printcheck: {safe_text(title, 80)}"]
         for c in self.checks:
             lines.append(f"  [{icon[c.status]}] {c.name}: {c.message}")
         verdict = "OK" if self.ok else f"{len(self.errors)} error(s)"
@@ -120,25 +123,37 @@ def _edge_stats(faces: np.ndarray) -> Tuple[int, int]:
     return int((counts == 1).sum()), int((counts > 2).sum())
 
 
+def _label(n: int, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Connected components of n nodes joined by edges (a[i], b[i]); returns labels 0..k-1.
+
+    Vectorised min-label hooking with pointer jumping: a handful of numpy
+    passes, so thousands of separate pieces cost no more than one.
+    """
+    lab = np.arange(n)
+    a = np.asarray(a, dtype=np.int64)
+    b = np.asarray(b, dtype=np.int64)
+    while len(a):
+        prev = lab.copy()
+        m = np.minimum(lab[a], lab[b])
+        np.minimum.at(lab, a, m)
+        np.minimum.at(lab, b, m)
+        np.minimum.at(lab, prev[a], m)  # hook the old roots too
+        np.minimum.at(lab, prev[b], m)
+        while True:  # pointer jumping until every node points at a root
+            nxt = lab[lab]
+            if np.array_equal(nxt, lab):
+                break
+            lab = nxt
+        if np.array_equal(lab, prev):
+            break
+    _, labels = np.unique(lab, return_inverse=True)
+    return labels.reshape(-1)
+
+
 def _components(faces: np.ndarray, n_vertices: int) -> np.ndarray:
-    """Label each face with a connected-component id (union-find on vertices)."""
-    parent = list(range(n_vertices))
-
-    def find(a: int) -> int:
-        root = a
-        while parent[root] != root:
-            root = parent[root]
-        while parent[a] != root:  # path compression
-            parent[a], a = root, parent[a]
-        return root
-
-    edges = np.unique(np.sort(np.vstack([faces[:, [0, 1]], faces[:, [1, 2]]]), axis=1), axis=0)
-    for a, b in edges.tolist():
-        ra, rb = find(a), find(b)
-        if ra != rb:
-            parent[max(ra, rb)] = min(ra, rb)
-    roots = np.array([find(int(v)) for v in faces[:, 0]])
-    _, labels = np.unique(roots, return_inverse=True)
+    """Label each face with a connected-component (body) id."""
+    lab = _label(n_vertices, np.r_[faces[:, 0], faces[:, 1]], np.r_[faces[:, 1], faces[:, 2]])
+    _, labels = np.unique(lab[faces[:, 0]], return_inverse=True)
     return labels.reshape(-1)
 
 
@@ -204,7 +219,7 @@ def point_inside(mesh, point: Sequence[float]) -> bool:
 def parse_bed(text: str) -> Tuple[float, float, float]:
     m = BED_RE.fullmatch(text or "")
     if not m:
-        raise ValueError(f"bed must look like 220x220x250 (mm), got {text!r}")
+        raise ValueError(f"bed must look like 220x220x250 (mm), got {safe_text(text, 40)!r}")
     dims = tuple(float(g) for g in m.groups())
     if not all(10 <= d <= 3000 for d in dims):
         raise ValueError("bed dimensions must be between 10 and 3000 mm")
@@ -214,29 +229,7 @@ def parse_bed(text: str) -> Tuple[float, float, float]:
 # --------------------------------------------------------------------------
 # Individual checks
 # --------------------------------------------------------------------------
-def _flat_regions(mesh, mask: np.ndarray) -> List[np.ndarray]:
-    """Group the faces in `mask` into edge-connected regions."""
-    idx = np.nonzero(mask)[0]
-    if len(idx) == 0:
-        return []
-    parent = {int(i): int(i) for i in idx}
-
-    def find(a):
-        while parent[a] != a:
-            parent[a] = parent[parent[a]]
-            a = parent[a]
-        return a
-
-    adj = mesh.face_adjacency
-    both = mask[adj[:, 0]] & mask[adj[:, 1]]
-    for a, b in adj[both].tolist():
-        ra, rb = find(a), find(b)
-        if ra != rb:
-            parent[max(ra, rb)] = min(ra, rb)
-    groups = {}
-    for i in idx.tolist():
-        groups.setdefault(find(i), []).append(i)
-    return [np.array(g) for g in groups.values()]
+MAX_SPAN_REGIONS = 200  # wide flat regions measured exactly with shapely; beyond that, counted as overhang
 
 
 def _classify_bridges(mesh, flat_mask, max_bridge):
@@ -245,39 +238,78 @@ def _classify_bridges(mesh, flat_mask, max_bridge):
     A region counts as a bridge when at least 60 % of its outline joins faces
     that go down from it (walls holding both ends) and its narrowest span is
     at most `max_bridge` mm. A cantilever (a T arm) fails the first test.
+    Regions are labelled once and measured with bincount, so the cost grows
+    with the mesh size, not with the number of regions.
     """
-    bridges = np.zeros(len(mesh.faces), dtype=bool)
-    info = []
-    adj = mesh.face_adjacency
-    adj_edges = mesh.face_adjacency_edges
+    n_faces = len(mesh.faces)
+    bridges = np.zeros(n_faces, dtype=bool)
+    flat_idx = np.nonzero(flat_mask)[0]
+    if len(flat_idx) == 0:
+        return bridges, [], 0
+    adj = np.asarray(mesh.face_adjacency)
+    adj_edges = np.asarray(mesh.face_adjacency_edges)
+    both = flat_mask[adj[:, 0]] & flat_mask[adj[:, 1]]
+    lab = _label(n_faces, adj[both, 0], adj[both, 1])
+    reg_ids, reg = np.unique(lab[flat_idx], return_inverse=True)
+    reg = reg.reshape(-1)
+    n_reg = len(reg_ids)
+    region_of = np.full(n_faces, -1, dtype=np.int64)
+    region_of[flat_idx] = reg
     centers_z = mesh.triangles_center[:, 2]
+    count = np.bincount(reg, minlength=n_reg)
+    z_mean = np.bincount(reg, weights=centers_z[flat_idx], minlength=n_reg) / np.maximum(count, 1)
+    area = np.bincount(reg, weights=mesh.area_faces[flat_idx], minlength=n_reg)
+
+    cross = flat_mask[adj[:, 0]] ^ flat_mask[adj[:, 1]]
+    pairs = adj[cross]
+    first_flat = flat_mask[pairs[:, 0]]
+    ff = np.where(first_flat, pairs[:, 0], pairs[:, 1])
+    other = np.where(first_flat, pairs[:, 1], pairs[:, 0])
+    r = region_of[ff]
+    e = adj_edges[cross]
     verts = mesh.vertices
-    for region in _flat_regions(mesh, flat_mask):
-        in_region = np.zeros(len(mesh.faces), dtype=bool)
-        in_region[region] = True
-        cross = in_region[adj[:, 0]] ^ in_region[adj[:, 1]]
-        if not cross.any():
-            continue
-        pairs = adj[cross]
-        other = np.where(in_region[pairs[:, 0]], pairs[:, 1], pairs[:, 0])
-        e = adj_edges[cross]
-        lengths = np.linalg.norm(verts[e[:, 0]] - verts[e[:, 1]], axis=1)
-        z = float(centers_z[region].mean())
-        below = centers_z[other] < z - 1e-4
-        supported = float(lengths[below].sum() / max(lengths.sum(), 1e-9))
-        tris = [Polygon(t[:, :2]) for t in mesh.triangles[region]]
-        shape = shapely.union_all([t for t in tris if t.area > 1e-9])
-        try:
-            span = 2.0 * shapely.maximum_inscribed_circle(shape, 0.05).length
-        except Exception:
-            span = float("inf")
-        is_bridge = supported >= 0.6 and span <= max_bridge
-        if is_bridge:
-            bridges[region] = True
-        if len(info) < 10:
-            info.append({"z": round(z, 2), "span_mm": round(span, 2), "supported_outline": round(supported, 2),
-                         "area_mm2": round(float(mesh.area_faces[region].sum()), 2), "bridge": bool(is_bridge)})
-    return bridges, info
+    lengths = np.linalg.norm(verts[e[:, 0]] - verts[e[:, 1]], axis=1)
+    below = centers_z[other] < z_mean[r] - 1e-4
+    total_len = np.bincount(r, weights=lengths, minlength=n_reg)
+    sup_len = np.bincount(r, weights=lengths * below, minlength=n_reg)
+    supported = sup_len / np.maximum(total_len, 1e-9)
+
+    tri_xy = mesh.triangles[flat_idx][:, :, :2]
+    lo = np.full((n_reg, 2), np.inf)
+    hi = np.full((n_reg, 2), -np.inf)
+    np.minimum.at(lo, reg, tri_xy.min(axis=1))
+    np.maximum.at(hi, reg, tri_xy.max(axis=1))
+    narrow = (hi - lo).min(axis=1)  # the inscribed span can never exceed the narrow side of the box
+    span = narrow.copy()
+    exact = np.zeros(n_reg, dtype=bool)
+
+    candidates = supported >= 0.6
+    is_bridge = candidates & (narrow <= max_bridge)
+    wide = np.nonzero(candidates & (narrow > max_bridge))[0]
+    wide = wide[np.argsort(-area[wide])]
+    skipped = max(0, len(wide) - MAX_SPAN_REGIONS)
+    if len(wide):
+        order = np.argsort(reg, kind="stable")
+        starts = np.searchsorted(reg[order], wide)
+        ends = np.searchsorted(reg[order], wide, side="right")
+        for k, s0, s1 in zip(wide[:MAX_SPAN_REGIONS].tolist(), starts.tolist(), ends.tolist()):
+            faces_k = flat_idx[order[s0:s1]]
+            tris = [Polygon(t[:, :2]) for t in mesh.triangles[faces_k]]
+            shape = shapely.union_all([t for t in tris if t.area > 1e-9])
+            try:
+                span[k] = 2.0 * shapely.maximum_inscribed_circle(shape, 0.05).length
+                exact[k] = True
+            except Exception:
+                span[k] = float("inf")
+            is_bridge[k] = span[k] <= max_bridge
+    bridges[flat_idx] = is_bridge[reg]
+    info = []
+    for k in np.argsort(-area)[:10].tolist():
+        info.append({"z": round(float(z_mean[k]), 2), "span_mm": round(float(span[k]), 2),
+                     "span_is_upper_bound": not bool(exact[k]),
+                     "supported_outline": round(float(supported[k]), 2),
+                     "area_mm2": round(float(area[k]), 2), "bridge": bool(is_bridge[k])})
+    return bridges, info, skipped
 
 
 def _check_overhang(mesh, zmin, z_tol, overhang_deg, supports, ignore_mm2, max_bridge):
@@ -289,7 +321,7 @@ def _check_overhang(mesh, zmin, z_tol, overhang_deg, supports, ignore_mm2, max_b
     on_bed = (nz < -0.999) & (tri_z.max(axis=1) <= zmin + z_tol)
     steep = (nz < 0) & (angle > overhang_deg + 0.5) & ~on_bed
     flat = steep & (angle > 89.0)
-    bridges, bridge_info = _classify_bridges(mesh, flat, max_bridge) if flat.any() else (np.zeros_like(flat), [])
+    bridges, bridge_info, skipped = _classify_bridges(mesh, flat, max_bridge)
     bridge_area = float(area[bridges].sum())
     steep = steep & ~bridges
     flat = flat & ~bridges
@@ -302,6 +334,7 @@ def _check_overhang(mesh, zmin, z_tol, overhang_deg, supports, ignore_mm2, max_b
         "bridge_area_mm2": round(bridge_area, 2),
         "max_bridge_mm": max_bridge,
         "flat_regions": bridge_info,
+        "wide_regions_not_measured": skipped,
         "faces": int(steep.sum()),
     }
     if steep.any():
@@ -327,7 +360,10 @@ def _check_overhang(mesh, zmin, z_tol, overhang_deg, supports, ignore_mm2, max_b
     return Check("overhang", FAIL, msg + "; supports are not allowed for this part", data)
 
 
-def _section_holes(mesh, axis: int, positions: Iterable[float]):
+MAX_SECTION_SEGMENTS = 20_000  # bigger sections are skipped (and reported) to keep the check fast
+
+
+def _section_holes(mesh, axis: int, positions: Iterable[float], skipped: list):
     """Find holes in planar sections perpendicular to `axis`."""
     other = [i for i in range(3) if i != axis]
     normal = np.zeros(3)
@@ -342,12 +378,16 @@ def _section_holes(mesh, axis: int, positions: Iterable[float]):
             continue
         if len(segs) < 3:
             continue
-        lines = [tuple(map(tuple, np.round(s[:, other], 5))) for s in segs]
-        lines = [ln for ln in lines if ln[0] != ln[1]]
-        if not lines:
+        if len(segs) > MAX_SECTION_SEGMENTS:
+            skipped.append({"axis": "xyz"[axis], "at": round(float(pos), 2), "segments": int(len(segs))})
+            continue
+        flat = np.round(np.asarray(segs)[:, :, other], 5)
+        flat = flat[np.any(flat[:, 0] != flat[:, 1], axis=1)]
+        if not len(flat):
             continue
         try:
-            area = shapely.build_area(shapely.set_precision(MultiLineString(lines), 1e-4))
+            lines = shapely.multilinestrings(shapely.linestrings(flat))
+            area = shapely.build_area(shapely.set_precision(lines, 1e-4))
         except Exception:
             continue
         polys = getattr(area, "geoms", [area])
@@ -378,12 +418,13 @@ def _section_holes(mesh, axis: int, positions: Iterable[float]):
 def _check_holes(mesh, min_hole_d):
     lo, hi = mesh.bounds
     holes = []
+    skipped = []
     for axis in range(3):
         span = hi[axis] - lo[axis]
         if span <= 0:
             continue
         positions = [lo[axis] + f * span for f in (0.11, 0.3, 0.5, 0.7, 0.89)]
-        holes.extend(_section_holes(mesh, axis, positions))
+        holes.extend(_section_holes(mesh, axis, positions, skipped))
     # de-duplicate: same axis and centre (ignoring the section coordinate); keep the narrowest
     uniq = {}
     for h in holes:
@@ -395,30 +436,38 @@ def _check_holes(mesh, min_hole_d):
     small = [h for h in holes if h["min_width_mm"] < min_hole_d]
     horizontal = [h for h in holes if h["axis"] != "z"]
     data = {"min_hole_mm": min_hole_d, "holes_found": len(holes), "small": small[:20],
-            "horizontal": horizontal[:20], "all": holes[:40]}
+            "horizontal": horizontal[:20], "all": holes[:40], "sections_skipped": skipped}
     notes = []
+    if skipped:
+        notes.append(f"{len(skipped)} section(s) too complex to search (over {MAX_SECTION_SEGMENTS} edges)")
     if horizontal:
         notes.append(f"{len(horizontal)} horizontal hole(s): use a teardrop or accept a rough top")
     if small:
         return Check("small_holes", WARN,
                      f"{len(small)} hole(s) narrower than {min_hole_d:g} mm: they print undersize, "
-                     "compensate or drill out" + ("; " + notes[0] if notes else ""), data)
-    msg = f"{len(holes)} hole(s) found, none narrower than {min_hole_d:g} mm"
-    if notes:
-        msg += "; " + notes[0]
+                     "compensate or drill out" + "".join("; " + n for n in notes), data)
+    msg = f"{len(holes)} hole(s) found, none narrower than {min_hole_d:g} mm" + "".join("; " + n for n in notes)
     return Check("small_holes", PASS, msg, data)
+
+
+MAX_RAY_WORK = 300_000_000  # samples x triangles; keeps the thin wall check to seconds
 
 
 def _check_thin_walls(mesh, nozzle, samples, seed):
     limit = 2.0 * nozzle
+    n_faces = max(1, len(mesh.faces))
+    asked = samples
+    samples = min(samples, MAX_RAY_WORK // n_faces)
+    if samples < 32:
+        return Check("thin_walls", SKIP, f"skipped: {n_faces} triangles is too many for ray sampling", {})
     pts, face_idx = trimesh.sample.sample_surface(mesh, samples, seed=seed)
     normals = mesh.face_normals[face_idx]
     eps = 1e-3
     dist = _first_hits(pts - normals * eps, -normals, np.asarray(mesh.triangles, dtype=float)) + eps
     finite = np.isfinite(dist)
     thin = finite & (dist < limit - 1e-6)
-    data = {"limit_mm": limit, "samples": int(samples), "measured": int(finite.sum()),
-            "thin_samples": int(thin.sum())}
+    data = {"limit_mm": limit, "samples": int(samples), "samples_asked": int(asked),
+            "measured": int(finite.sum()), "thin_samples": int(thin.sum())}
     if finite.any():
         data["min_thickness_mm"] = round(float(dist[finite].min()), 3)
     if thin.any():
@@ -551,7 +600,9 @@ def check_printable(
     labels = _components(faces, len(mesh.vertices))
     n_bodies = int(labels.max()) + 1
     stats["bodies"] = n_bodies
-    body_zmin = [float(mesh.triangles[labels == k][:, :, 2].min()) for k in range(n_bodies)]
+    body_zmin_arr = np.full(n_bodies, np.inf)
+    np.minimum.at(body_zmin_arr, labels, mesh.triangles[:, :, 2].min(axis=1))
+    body_zmin = body_zmin_arr.tolist()
     bdata = {"bodies": n_bodies, "expected": expected_bodies}
     if expected_bodies is None:
         checks.append(Check("bodies", PASS, f"{n_bodies} separate bod{'y' if n_bodies == 1 else 'ies'}", bdata))
@@ -568,7 +619,8 @@ def check_printable(
     tri_z = mesh.triangles[:, :, 2]
     contact = (nz < -0.999) & (tri_z.max(axis=1) <= zmin + z_tol)
     contact_area = float(mesh.area_faces[contact].sum())
-    floating = [k for k, z in enumerate(body_zmin) if z > zmin + z_tol]
+    floating_all = [k for k, z in enumerate(body_zmin) if z > zmin + z_tol]
+    floating = floating_all[:50]  # list at most 50 in the report
     sdata = {"min_z": round(zmin, 4), "contact_area_mm2": round(contact_area, 2),
              "min_contact_mm2": min_contact_mm2, "floating_bodies": floating}
     if abs(zmin) > z_tol:
@@ -577,8 +629,8 @@ def check_printable(
         checks.append(Check("on_bed", FAIL,
                             f"only {contact_area:.1f} mm2 flat on the bed (minimum {min_contact_mm2:g}): "
                             "add a flat base or reorient", sdata))
-    elif floating:
-        checks.append(Check("on_bed", FAIL, f"{len(floating)} body(ies) do not touch the bed", sdata))
+    elif floating_all:
+        checks.append(Check("on_bed", FAIL, f"{len(floating_all)} body(ies) do not touch the bed", sdata))
     else:
         msg = f"{contact_area:.1f} mm2 flat contact on the bed"
         status = PASS
@@ -657,7 +709,7 @@ def load_stl(path: str):
     if not path.lower().endswith(".stl"):
         raise ValueError("only .stl files are accepted")
     if not os.path.isfile(path):
-        raise ValueError(f"not a file: {path}")
+        raise ValueError(f"not a file: {safe_text(path)}")
     if os.path.getsize(path) > MAX_STL_BYTES:
         raise ValueError(f"file larger than {MAX_STL_BYTES // (1024 * 1024)} MB, refusing")
     mesh = trimesh.load(path, file_type="stl", force="mesh", process=True)
@@ -692,12 +744,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             thin_wall_samples=args.thin_walls,
         )
     except (ValueError, RuntimeError) as exc:
-        print(f"printcheck: {exc}", file=sys.stderr)
+        print(f"printcheck: {safe_text(exc)}", file=sys.stderr)
         return 2
     if args.json:
         print(json.dumps(res.to_dict(), indent=2))
     else:
-        print(res.summary(os.path.basename(args.stl)))
+        print(res.summary(safe_text(os.path.basename(args.stl), 80)))  # file names are untrusted
     return 0 if res.ok else 1
 
 

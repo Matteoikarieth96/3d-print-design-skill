@@ -27,6 +27,8 @@ import trimesh
 from shapely.geometry import MultiPolygon, Polygon
 from shapely.geometry.polygon import orient
 
+from safeio import atomic_write, safe_text
+
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -58,7 +60,7 @@ def safe_out_dir(project_dir: Union[str, Path], out: Union[str, Path]) -> Path:
     project = Path(project_dir).resolve()
     target = (project / out).resolve()
     if target != project and project not in target.parents:
-        raise ValueError(f"output folder {target} is outside the project folder {project}")
+        raise ValueError(f"output folder {safe_text(target)} is outside the project folder {safe_text(project)}")
     return target
 
 
@@ -488,8 +490,11 @@ def write_part(out_dir: Path, name: str, mesh: trimesh.Trimesh, check_result, *,
     out_dir.mkdir(parents=True, exist_ok=True)
     stl_path = out_dir / f"{name}.stl"
     json_path = out_dir / f"{name}.json"
+    for target in (stl_path, json_path):
+        if target.is_symlink():
+            raise ValueError(f"refusing to write through a symlink: {target.name}")
     data = mesh.export(file_type="stl")
-    stl_path.write_bytes(data)
+    atomic_write(stl_path, data)  # refuses symlinks, replaces atomically
     density = DENSITY_G_CM3.get(material.upper(), DENSITY_G_CM3["PLA"])
     lo, hi = mesh.bounds
     volume = float(mesh.volume)
@@ -517,5 +522,5 @@ def write_part(out_dir: Path, name: str, mesh: trimesh.Trimesh, check_result, *,
         meta["printer_bed"] = [float(b) for b in bed]
     if extra:
         meta.update(_jsonable(extra))
-    json_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    atomic_write(json_path, json.dumps(meta, indent=2) + "\n")
     return stl_path, json_path

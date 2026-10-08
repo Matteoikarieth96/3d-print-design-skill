@@ -33,6 +33,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from safeio import atomic_write, safe_text  # noqa: E402
 
 STEP = 0.05          # clearance step per side, mm
 STEPS = 9            # 0.00 .. 0.40
@@ -150,7 +151,7 @@ def cmd_build(args) -> int:
         bed = printcheck.parse_bed(args.bed)
         solid, legend = build_coupon(peg_d=args.peg)
     except ValueError as exc:
-        print(f"refusing: {exc}", file=sys.stderr)
+        print(f"refusing: {safe_text(exc)}", file=sys.stderr)
         return 2
     mesh = cad.to_trimesh(solid)
     res = printcheck.check_printable(mesh, bed=bed, layer=args.layer, nozzle=args.nozzle,
@@ -162,9 +163,13 @@ def cmd_build(args) -> int:
         return 1
     params = {"PEG_D": args.peg, "STEP": STEP, "STEPS": STEPS, "FIN_ANGLES": list(FIN_ANGLES),
               "NOZZLE": args.nozzle, "LAYER": args.layer}
-    stl, meta = cad.write_part(out_dir, "calibration-coupon", mesh, res, material=args.material,
-                               params=params, color="#e0a030", bed=bed, extra={"legend": legend})
-    print(f"wrote {stl} and {meta}")
+    try:
+        stl, meta = cad.write_part(out_dir, "calibration-coupon", mesh, res, material=args.material,
+                                   params=params, color="#e0a030", bed=bed, extra={"legend": legend})
+    except (ValueError, OSError) as exc:
+        print(f"refusing: {safe_text(exc)}", file=sys.stderr)
+        return 2
+    print(f"wrote {safe_text(stl)} and {safe_text(meta)}")
     print("print it WITHOUT supports, 0.2 mm layers, the material you will use for real parts")
     return 0
 
@@ -211,10 +216,14 @@ def cmd_record(args) -> int:
         if data["material"] not in MATERIALS:
             raise ValueError(f"--material must be one of {', '.join(MATERIALS)}")
     except ValueError as exc:
-        print(f"refusing: {exc}", file=sys.stderr)
+        print(f"refusing: {safe_text(exc)}", file=sys.stderr)
         return 2
-    target.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    print(f"wrote {target}")
+    try:
+        atomic_write(target, json.dumps(data, indent=2) + "\n")  # never through a symlink
+    except (ValueError, OSError) as exc:
+        print(f"refusing: {safe_text(exc)}", file=sys.stderr)
+        return 2
+    print(f"wrote {safe_text(target)}")
     return 0
 
 

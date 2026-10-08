@@ -9,7 +9,7 @@ actually produce, so the design numbers stop being guesses.
 
 ```
 cd <project folder>
-"$SKILL/.venv/bin/python" "$SKILL/scripts/calibration_coupon.py" build --out out --peg 6
+"$SKILL/.venv/bin/python" -P "$SKILL/scripts/calibration_coupon.py" build --out out --peg 6
 ```
 
 Outputs `out/calibration-coupon.stl` (4 bodies on one plate: the plate, two
@@ -47,12 +47,12 @@ with their own notches. Peg and bar are the nominal size (6 mm by default).
 ## Record it
 
 ```
-"$SKILL/.venv/bin/python" "$SKILL/scripts/calibration_coupon.py" record \
+"$SKILL/.venv/bin/python" -P "$SKILL/scripts/calibration_coupon.py" record \
   --press 0.10 --snug 0.15 --sliding 0.20 --free 0.30 --overhang 45 \
   --printer "my printer" --material PETG --nozzle 0.4 --layer 0.2
 ```
 
-This writes `fits.json` in the current folder:
+This writes `fits.json` in the current folder (atomically, never through a symlink):
 
 ```json
 {

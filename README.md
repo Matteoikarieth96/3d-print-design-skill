@@ -61,23 +61,30 @@ Ask Claude in your own words, for example "design a clip to hold a 7 mm cable
 bundle under my desk" or "disegnami un supporto per il router da avvitare al
 muro". The skill takes it from there.
 
-Manual use, from a project folder:
+Manual use, from a fresh, empty project folder (never inside a downloaded or
+cloned repository; copy STLs you were given into it as data). Build scripts
+only load helpers from `$PRINT3D_SKILL_DIR/scripts` or the installed skill, and
+`-P` keeps the project folder off Python's import path:
 
 ```
-cp ~/.claude/skills/3d-print-design/templates/build.py .
-~/.claude/skills/3d-print-design/.venv/bin/python build.py            # check + write out/<name>.stl
-~/.claude/skills/3d-print-design/.venv/bin/python build.py --check    # check only
-python3 ~/.claude/skills/3d-print-design/scripts/serve.py out --open  # preview
-python3 ~/.claude/skills/3d-print-design/scripts/render_png.py out --out out/preview.png
-~/.claude/skills/3d-print-design/.venv/bin/python ~/.claude/skills/3d-print-design/scripts/printcheck.py part.stl --bed 220x220x250 --layer 0.2 --overhang 45
+S=~/.claude/skills/3d-print-design
+mkdir -p ~/3d-print-design/my-part && cd ~/3d-print-design/my-part
+cp "$S/templates/build.py" .
+"$S/.venv/bin/python" -P build.py            # check + write out/<name>.stl
+"$S/.venv/bin/python" -P build.py --check    # check only
+python3 "$S/scripts/serve.py" out --open     # preview
+python3 "$S/scripts/render_png.py" out --out out/preview.png
+"$S/.venv/bin/python" -P "$S/scripts/printcheck.py" part.stl --bed 220x220x250 --layer 0.2 --overhang 45
 ```
+
+If the skill is installed somewhere else, set `PRINT3D_SKILL_DIR` to its folder.
 
 Calibration coupon:
 
 ```
-~/.claude/skills/3d-print-design/.venv/bin/python ~/.claude/skills/3d-print-design/scripts/calibration_coupon.py build --out out
+"$S/.venv/bin/python" -P "$S/scripts/calibration_coupon.py" build --out out
 # print it, test the pegs, then:
-~/.claude/skills/3d-print-design/.venv/bin/python ~/.claude/skills/3d-print-design/scripts/calibration_coupon.py record --press 0.10 --snug 0.15 --sliding 0.20 --free 0.30 --overhang 45 --material PETG
+"$S/.venv/bin/python" -P "$S/scripts/calibration_coupon.py" record --press 0.10 --snug 0.15 --sliding 0.20 --free 0.30 --overhang 45 --material PETG
 ```
 
 ![Calibration coupon](docs/calibration-coupon.png)
@@ -88,7 +95,7 @@ Calibration coupon:
 |---|---|
 | `out/<name>.stl` | binary STL in millimetres, Z up, sitting on z = 0 in print orientation |
 | `out/<name>.json` | bounding box, volume, solid mass upper bound, triangle count, full printcheck result, parameter snapshot, STL sha256 |
-| `out/manifest.json` | written by `serve.py`: parts, colours, bed size for the viewer |
+| `out/manifest.json` | written once by `serve.py` at start-up: parts, colours, bed size for the viewer |
 | `fits.json` | your measured clearances (from the coupon) |
 
 ## What it does NOT do
@@ -106,13 +113,18 @@ Calibration coupon:
 
 ## Security summary
 
-Local only. The preview server binds 127.0.0.1, serves one folder, refuses
-`..`, subfolders, symlinks and non-allowed file types, checks the Host header
-and sends a strict Content-Security-Policy. Part names and output folders are
-validated. STL files are parsed as numbers only. three.js r128 is the only
-external script, loaded from cdnjs with an integrity hash; the STL parser and
-orbit control are small built-ins, so nothing else is fetched or vendored.
-Details: [SECURITY.md](SECURITY.md).
+Local only. Build scripts never import code from the project folder or the
+folders around it. Every file the scripts write goes through one helper that
+refuses symlinks and replaces files atomically. The preview server binds
+127.0.0.1, serves one folder, opens each file without following symlinks and
+refuses hard links, FIFOs, `..`, subfolders and non-allowed file types, checks
+the Host header, times out idle clients and sends a strict
+Content-Security-Policy. Part names and output folders are validated; file
+names are stripped of control characters before they are printed. STL files are
+parsed as numbers only, with size caps checked before reading. three.js r128 is
+the only external script, loaded from cdnjs with an integrity hash; the STL
+parser and orbit control are small built-ins, so nothing else is fetched or
+vendored. Details: [SECURITY.md](SECURITY.md).
 
 ## Limitations
 
