@@ -453,7 +453,13 @@ def _check_holes(mesh, min_hole_d):
 MAX_RAY_WORK = 300_000_000  # samples x triangles; keeps the thin wall check to seconds
 
 
-def _check_thin_walls(mesh, nozzle, samples, seed):
+def _check_thin_walls(mesh, nozzle, samples, seed, side_walls_only=False):
+    """Shoot rays inward from random surface points and report walls under 2 x nozzle.
+
+    side_walls_only=True (colour parts) measures only from faces that are
+    not flat, so a 3-layer inlay is judged by its width, not its height
+    (colour_thickness covers the height).
+    """
     limit = 2.0 * nozzle
     n_faces = max(1, len(mesh.faces))
     asked = samples
@@ -462,6 +468,11 @@ def _check_thin_walls(mesh, nozzle, samples, seed):
         return Check("thin_walls", SKIP, f"skipped: {n_faces} triangles is too many for ray sampling", {})
     pts, face_idx = trimesh.sample.sample_surface(mesh, samples, seed=seed)
     normals = mesh.face_normals[face_idx]
+    if side_walls_only:
+        keep = np.abs(normals[:, 2]) < 0.7
+        pts, normals = pts[keep], normals[keep]
+        if len(pts) == 0:
+            return Check("thin_walls", PASS, "no side walls to measure", {"limit_mm": limit})
     eps = 1e-3
     dist = _first_hits(pts - normals * eps, -normals, np.asarray(mesh.triangles, dtype=float)) + eps
     finite = np.isfinite(dist)
@@ -479,7 +490,7 @@ def _check_thin_walls(mesh, nozzle, samples, seed):
     return Check("thin_walls", PASS, f"no sampled wall thinner than {limit:g} mm (2 x nozzle)", data)
 
 
-def _check_layers(mesh, layer, zmin, z_tol):
+def _check_layers(mesh, layer, zmin, z_tol, include_bottom=False):
     nz = mesh.face_normals[:, 2]
     flat = np.abs(nz) > 0.999
     if not flat.any():
@@ -490,7 +501,8 @@ def _check_layers(mesh, layer, zmin, z_tol):
     for zi, ai in zip(z.tolist(), areas.tolist()):
         level_area[zi] = level_area.get(zi, 0.0) + ai
     # ignore specks: near-flat facets of curved surfaces are not features
-    levels = np.array(sorted(lv for lv, a in level_area.items() if lv > z_tol and a >= 1.0))
+    floor = -1.0 if include_bottom else z_tol  # a colour part's own bottom face counts too
+    levels = np.array(sorted(lv for lv, a in level_area.items() if lv > floor and a >= 1.0))
     off = []
     for lv in levels.tolist():
         k = round(lv / layer)
@@ -525,11 +537,18 @@ def check_printable(
     probes_inside: Sequence[Sequence[float]] = (),
     probes_outside: Sequence[Sequence[float]] = (),
     seed: int = 0,
+    standalone: bool = True,
 ) -> CheckResult:
     """Run every check on a trimesh.Trimesh and return a CheckResult.
 
     Errors (status "fail") mean: do not export or print this as it is.
     Warnings mean: read them, decide, and say so in the print sheet.
+
+    standalone=False is for one colour part of a multicolour object printed
+    in place (see assembly.py): it may rest on another part instead of the
+    bed, so "on the bed", build volume and overhangs are skipped here and
+    checked on the joined object, and layer levels are measured from the
+    bed (z = 0) instead of from the part's own lowest point.
     """
     if trimesh is None or shapely is None:
         raise RuntimeError("printcheck needs numpy, trimesh and shapely (pip install -r requirements.txt)")
@@ -615,6 +634,14 @@ def check_printable(
 
     # sits on bed -----------------------------------------------------------
     zmin = float(lo[2])
+    if not standalone:
+        why = "checked on the joined multicolour object"
+        checks.append(Check("on_bed", SKIP, why, {"min_z": round(zmin, 4)}))
+        checks.append(Check("build_volume", SKIP, why, {}))
+        checks.append(Check("overhang", SKIP, why, {}))
+        checks.append(_check_layers(mesh, layer, 0.0, z_tol, include_bottom=True))
+        return _finish_checks(checks, stats, mesh, watertight, min_hole_d, thin_wall_samples,
+                              nozzle, seed, probes_inside, probes_outside, side_walls_only=True)
     nz = mesh.face_normals[:, 2]
     tri_z = mesh.triangles[:, :, 2]
     contact = (nz < -0.999) & (tri_z.max(axis=1) <= zmin + z_tol)
@@ -662,7 +689,13 @@ def check_printable(
 
     # layer alignment -------------------------------------------------------
     checks.append(_check_layers(mesh, layer, zmin, z_tol))
+    return _finish_checks(checks, stats, mesh, watertight, min_hole_d, thin_wall_samples,
+                          nozzle, seed, probes_inside, probes_outside)
 
+
+def _finish_checks(checks, stats, mesh, watertight, min_hole_d, thin_wall_samples,
+                   nozzle, seed, probes_inside, probes_outside, side_walls_only=False) -> CheckResult:
+    """Checks that apply the same way to a whole part and to one colour part."""
     # small holes -----------------------------------------------------------
     if watertight:
         checks.append(_check_holes(mesh, min_hole_d))
@@ -671,7 +704,7 @@ def check_printable(
 
     # thin walls ------------------------------------------------------------
     if thin_wall_samples and watertight:
-        checks.append(_check_thin_walls(mesh, nozzle, int(thin_wall_samples), seed))
+        checks.append(_check_thin_walls(mesh, nozzle, int(thin_wall_samples), seed, side_walls_only))
     elif thin_wall_samples:
         checks.append(Check("thin_walls", SKIP, "skipped: needs a closed mesh", {}))
 

@@ -11,12 +11,15 @@
 | Walls / infill | <3 walls, 20 to 40 % infill> |
 | Supports | <none> (or: where and why) |
 | Brim | <none> (add one if the part is tall and narrow) |
+| Printer | <generic / Bambu Lab X2D> (profile `PRINTER`) |
 | Colour change | <none> (or: at Z = <h> mm, layer <h / layer height>; confirm in the slicer preview) |
+| Colours | <single> (or: one STL per colour: <suffix = colour>, dominant colour <name>) |
 | Quantity | <n> |
 | Mass estimate | up to <g> g at 100 % infill; the slicer gives the real value |
 | Fits used | <fits.json from the coupon / default clearances> |
 | Accepted printcheck warnings | <list, or "none"> |
 | After printing | <clean holes, install inserts, test fit before load> |
+| Next step | <your slicer> (or, on the X2D: x2d-print skill with `out/x2d-job.json`) |
 
 Slicing and printing are your steps. Do not leave the printer unattended;
 ventilate for ABS/ASA; let parts cool before handling.

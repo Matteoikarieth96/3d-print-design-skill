@@ -56,6 +56,7 @@
           file: p.file,
           name: typeof p.name === 'string' ? p.name.slice(0, 80) : p.file,
           color: typeof p.color === 'string' && HEX.test(p.color) ? p.color : '#4f8cff',
+          assembly: p.assembly === true,
           index: i
         };
       });
@@ -272,7 +273,10 @@
         document.getElementById('section').checked = true;
         updateSection();
       }
-      var floating = meshes.filter(Boolean).some(function (m) { return m.geometry.boundingBox.min.z > 0.01; });
+      // colour parts of one object (assembly) may rest on another part: only the whole object must touch z = 0
+      var floating = meshes.some(function (m) {
+        return m && m.geometry.boundingBox.min.z > 0.01 && !m.userData.part.assembly;
+      }) || box.min.z > 0.01;
       setStatus(loaded + ' part(s) loaded' + (failed ? ', ' + failed + ' failed' : '') +
         (floating ? '. Note: a part does not start at z = 0.' : '.'));
       resize();

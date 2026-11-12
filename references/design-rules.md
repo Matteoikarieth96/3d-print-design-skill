@@ -146,7 +146,21 @@ roughly the material's printing temperature or a bit below, pressing gently.
 - Holes shrink more and parts stretch: test fits with the coupon in TPU.
 - Hardness (Shore 95A is common) changes how much a press fit grips.
 
-## 13. Chirality: left and right parts, mirrored assemblies
+## 13. Multicolour parts (one STL per colour)
+
+- One part per colour, all in the same coordinate frame, returned as
+  `{suffix: solid}` with `ASSEMBLY = True`. The parts must touch, never share
+  volume: cut each accent out of the base with the very same outline.
+- Accents in few layers: flush inlays 3 layers deep on top, or face down in
+  the first 3 to 5 layers. A colour running the full height next to another
+  colour on the same nozzle costs a purge on every layer.
+- Colour parts at least 3 layers thick, at least 2 x nozzle wide, with their
+  boundaries on layer heights.
+- One material for all colours.
+- Printer-specific rules (the X2D's two nozzles, its reach, its hand-off):
+  [printers.md](printers.md).
+
+## 14. Chirality: left and right parts, mirrored assemblies
 
 A mirrored part is a different part. A rotated view of a mirror image can look
 exactly like the original, so a glance at the viewer is not a check.

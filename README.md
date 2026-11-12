@@ -4,7 +4,9 @@ A Claude Code skill that designs parts for FDM 3D printing in code: from a
 verbal idea to a checked STL with a browser preview, for any printer. It
 interviews you, writes a parametric build script, refuses to export a part
 that fails its printability checks, shows the result in a local 3D viewer and
-hands you the STL with a short print sheet.
+hands you the STL with a short print sheet. For the Bambu Lab X2D it also
+writes a draft job for the [x2d-print](https://github.com/Matteoikarieth96/x2d-print-skill)
+skill, so the design goes straight into a ready Bambu Studio project.
 
 **It never talks to your printer.** No G-code, no network calls to printers,
 no starting prints. You slice and print with your own slicer.
@@ -23,7 +25,17 @@ no starting prints. You slice and print with your own slicer.
 6. **Preview**: `scripts/serve.py` serves the output folder on 127.0.0.1 to a three.js viewer: per-part colours, orbit, bed grid of your printer's size, section plane, bounding box readout in mm, dark and light.
 7. **Iterate on numbers**, not on prints.
 8. **Calibration coupon** for fits: holes and pegs at 0.00 to 0.40 mm per side, read by counting notches, recorded into `fits.json` that the build scripts use.
-9. **Delivery**: STL(s), metadata JSON (bounding box, volume, mass upper bound, triangle count, check results, parameters), preview, print sheet.
+9. **Delivery**: STL(s), metadata JSON (bounding box, volume, mass upper bound, triangle count, check results, parameters), preview, print sheet, and for the X2D a draft job for x2d-print.
+
+## Multicolour parts and the Bambu Lab X2D
+
+- **Printer profiles** (`PRINTER` in `build.py`): `generic` (220 x 220 x 250 mm unless you set `PRINTER_BED`) or `bambu-x2d`. The X2D profile checks against 256 x 256 x 261 mm, or the 235.5 x 256 x 256 mm both nozzles reach when the part has two or more colours. Details: [references/printers.md](references/printers.md).
+- **One STL per colour, checked as one object.** Return one part per colour and set `ASSEMBLY = True`: each colour part is checked alone (watertight, widths, layers), then all of them joined (on the bed, build volume, overhangs). Extra checks: colour parts must touch without sharing volume, at least 3 layers thick, and the build counts the layers that need a filament change on the same nozzle.
+- **Hand-off to x2d-print:** with the X2D profile the build also writes `out/x2d-job.json`, a draft in the x2d-print job format: each STL with its colour, the layers each colour spans, the suggested nozzle (dominant colour on its own nozzle). The template and the filament numbers are left empty on purpose: x2d-print fills them from your own Bambu Studio, which knows what is loaded in the AMS. The two skills stay separate; this is a JSON file, nothing runs the other skill.
+
+![Two-colour coaster: black base, yellow star inlay](docs/two-colour-coaster.png)
+
+*The fictional two-colour coaster example: black base, yellow star inlaid 3 layers deep on top.*
 
 ## The intake questions
 
@@ -94,7 +106,8 @@ Calibration coupon:
 | File | Content |
 |---|---|
 | `out/<name>.stl` | binary STL in millimetres, Z up, sitting on z = 0 in print orientation |
-| `out/<name>.json` | bounding box, volume, solid mass upper bound, triangle count, full printcheck result, parameter snapshot, STL sha256 |
+| `out/<name>.json` | bounding box, volume, solid mass upper bound, triangle count, full printcheck result, parameter snapshot, STL sha256, printer profile and colour |
+| `out/x2d-job.json` | X2D profile only: draft job for the x2d-print skill (see above) |
 | `out/manifest.json` | written once by `serve.py` at start-up: parts, colours, bed size for the viewer |
 | `fits.json` | your measured clearances (from the coupon) |
 
@@ -110,6 +123,7 @@ Calibration coupon:
 
 - [examples/cable-clip](examples/cable-clip): desk-edge cable clip with countersunk screw holes and a snap-in channel.
 - [examples/calibration-coupon](examples/calibration-coupon): the tolerance and overhang coupon.
+- [examples/two-colour-coaster](examples/two-colour-coaster): a black coaster with a yellow star inlay for the Bambu Lab X2D, with its `x2d-job.json` hand-off.
 
 ## Security summary
 

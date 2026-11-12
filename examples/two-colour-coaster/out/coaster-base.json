@@ -1,0 +1,389 @@
+{
+  "name": "coaster-base",
+  "units": "mm",
+  "generated_utc": "2026-11-12T11:51:10+00:00",
+  "generator": "3d-print-design build script",
+  "stl": "coaster-base.stl",
+  "stl_sha256": "46d5f01bf7ac9a48b9d5a0fe7f05d0cf8d895558d252e5332f5005df2054f7b5",
+  "material": "PLA",
+  "density_g_cm3": 1.24,
+  "bbox": {
+    "min": [
+      -45.0,
+      -45.0,
+      0.0
+    ],
+    "max": [
+      45.0,
+      45.0,
+      4.0
+    ],
+    "size": [
+      90.0,
+      90.0,
+      4.0
+    ]
+  },
+  "volume_mm3": 24707.26,
+  "estimated_mass_g_solid": 30.64,
+  "mass_note": "upper bound at 100 % infill; a slicer estimate with your infill will be lower",
+  "triangles": 1476,
+  "printcheck": {
+    "ok": true,
+    "errors": [],
+    "warnings": [],
+    "checks": [
+      {
+        "name": "units",
+        "status": "pass",
+        "message": "size 90.0 x 90.0 x 4.0 mm",
+        "data": {}
+      },
+      {
+        "name": "watertight",
+        "status": "pass",
+        "message": "closed surface with consistent winding",
+        "data": {
+          "open_edges": 0,
+          "non_manifold_edges": 0,
+          "winding_consistent": true
+        }
+      },
+      {
+        "name": "volume",
+        "status": "pass",
+        "message": "24707.3 mm3",
+        "data": {
+          "volume_mm3": 24707.258
+        }
+      },
+      {
+        "name": "bodies",
+        "status": "pass",
+        "message": "1 body as expected",
+        "data": {
+          "bodies": 1,
+          "expected": 1
+        }
+      },
+      {
+        "name": "on_bed",
+        "status": "skip",
+        "message": "checked on the joined multicolour object",
+        "data": {
+          "min_z": 0.0
+        }
+      },
+      {
+        "name": "build_volume",
+        "status": "skip",
+        "message": "checked on the joined multicolour object",
+        "data": {}
+      },
+      {
+        "name": "overhang",
+        "status": "skip",
+        "message": "checked on the joined multicolour object",
+        "data": {}
+      },
+      {
+        "name": "layer_alignment",
+        "status": "pass",
+        "message": "all flat faces sit on 0.2 mm layer boundaries",
+        "data": {
+          "layer_mm": 0.2,
+          "levels_checked": 3,
+          "off_grid_levels": []
+        }
+      },
+      {
+        "name": "small_holes",
+        "status": "pass",
+        "message": "1 hole(s) found, none narrower than 3 mm",
+        "data": {
+          "min_hole_mm": 3.0,
+          "holes_found": 1,
+          "small": [],
+          "horizontal": [],
+          "all": [
+            {
+              "axis": "z",
+              "min_width_mm": 24.99,
+              "center": [
+                -0.0,
+                -0.0,
+                3.56
+              ]
+            }
+          ],
+          "sections_skipped": []
+        }
+      },
+      {
+        "name": "thin_walls",
+        "status": "pass",
+        "message": "no sampled wall thinner than 0.8 mm (2 x nozzle)",
+        "data": {
+          "limit_mm": 0.8,
+          "samples": 400,
+          "samples_asked": 400,
+          "measured": 32,
+          "thin_samples": 0,
+          "min_thickness_mm": 25.585
+        }
+      },
+      {
+        "name": "probes",
+        "status": "pass",
+        "message": "2 probe point(s) solid/empty as expected",
+        "data": {
+          "inside": [
+            [
+              0.0,
+              0.0,
+              2.0
+            ]
+          ],
+          "outside": [
+            [
+              0.0,
+              0.0,
+              3.7
+            ]
+          ],
+          "failed": []
+        }
+      }
+    ],
+    "stats": {
+      "triangles": 1476,
+      "vertices": 740,
+      "bbox_min": [
+        -45.0,
+        -45.0,
+        0.0
+      ],
+      "bbox_max": [
+        45.0,
+        45.0,
+        4.0
+      ],
+      "size": [
+        90.0,
+        90.0,
+        4.0
+      ],
+      "surface_area_mm2": 13812.69,
+      "volume_mm3": 24707.258,
+      "bodies": 1
+    }
+  },
+  "parameters": {
+    "FITS": {
+      "press": 0.05,
+      "snug": 0.1,
+      "sliding": 0.2,
+      "free": 0.3,
+      "source": "defaults (print the calibration coupon to measure your printer)"
+    },
+    "NAME": "coaster",
+    "MATERIAL": "PLA",
+    "COLOR": {
+      "base": "#161616",
+      "star": "#fff144"
+    },
+    "COLOUR_NAME": {
+      "base": "black",
+      "star": "yellow"
+    },
+    "PRINTER": "bambu-x2d",
+    "PRINTER_BED": null,
+    "NOZZLE": 0.4,
+    "LAYER": 0.2,
+    "OVERHANG_LIMIT": 45,
+    "SUPPORTS_ALLOWED": false,
+    "EXPECTED_BODIES": 1,
+    "ASSEMBLY": true,
+    "ASSEMBLY_BODIES": 1,
+    "DIAM": 90.0,
+    "THICK": 4.0,
+    "FOOT_CHAMFER": 0.4,
+    "TOP_CHAMFER": 0.6,
+    "STAR_POINTS": 5,
+    "STAR_R_OUT": 30.0,
+    "STAR_R_IN": 12.5,
+    "INLAY_T": 0.6,
+    "PROBES_INSIDE": {
+      "base": [
+        [
+          0.0,
+          0.0,
+          2.0
+        ]
+      ],
+      "star": [
+        [
+          0.0,
+          0.0,
+          3.7
+        ]
+      ]
+    },
+    "PROBES_OUTSIDE": {
+      "base": [
+        [
+          0.0,
+          0.0,
+          3.7
+        ]
+      ]
+    }
+  },
+  "preview_color": "#161616",
+  "printer_bed": [
+    235.5,
+    256.0,
+    256.0
+  ],
+  "printer": "bambu-x2d",
+  "assembly": true,
+  "printer_notes": [
+    "2 colours: checked against the 235.5 x 256 x 256 mm that both nozzles reach; leave room for the prime tower too",
+    "plate: Textured PEI Plate by default (the bottom face takes its texture)"
+  ],
+  "assembly_check": {
+    "ok": true,
+    "errors": [],
+    "warnings": [],
+    "checks": [
+      {
+        "name": "units",
+        "status": "pass",
+        "message": "size 90.0 x 90.0 x 4.0 mm",
+        "data": {}
+      },
+      {
+        "name": "watertight",
+        "status": "pass",
+        "message": "closed surface with consistent winding",
+        "data": {
+          "open_edges": 0,
+          "non_manifold_edges": 0,
+          "winding_consistent": true
+        }
+      },
+      {
+        "name": "volume",
+        "status": "pass",
+        "message": "25368.5 mm3",
+        "data": {
+          "volume_mm3": 25368.517
+        }
+      },
+      {
+        "name": "bodies",
+        "status": "pass",
+        "message": "1 body as expected",
+        "data": {
+          "bodies": 1,
+          "expected": 1
+        }
+      },
+      {
+        "name": "on_bed",
+        "status": "pass",
+        "message": "6247.8 mm2 flat contact on the bed",
+        "data": {
+          "min_z": 0.0,
+          "contact_area_mm2": 6247.84,
+          "min_contact_mm2": 10.0,
+          "floating_bodies": []
+        }
+      },
+      {
+        "name": "build_volume",
+        "status": "pass",
+        "message": "fits 235.5 x 256 x 256 with 5 mm margin",
+        "data": {
+          "bed": [
+            235.5,
+            256.0,
+            256.0
+          ],
+          "margin": 5.0
+        }
+      },
+      {
+        "name": "overhang",
+        "status": "pass",
+        "message": "no overhang steeper than 45 deg (beyond 1 mm2)",
+        "data": {
+          "limit_deg": 45,
+          "area_mm2": 0.0,
+          "flat_ceiling_area_mm2": 0.0,
+          "bridge_area_mm2": 0.0,
+          "max_bridge_mm": 10.0,
+          "flat_regions": [],
+          "wide_regions_not_measured": 0,
+          "faces": 0
+        }
+      },
+      {
+        "name": "layer_alignment",
+        "status": "pass",
+        "message": "all flat faces sit on 0.2 mm layer boundaries",
+        "data": {
+          "layer_mm": 0.2,
+          "levels_checked": 1,
+          "off_grid_levels": []
+        }
+      },
+      {
+        "name": "overlap",
+        "status": "pass",
+        "message": "2 colour parts touch without sharing volume",
+        "data": {}
+      },
+      {
+        "name": "colour_layers",
+        "status": "pass",
+        "message": "colours meet in 3 of 20 layers, 0 need a filament change on the same nozzle",
+        "data": {
+          "layers": 20,
+          "mixed_layers": 3,
+          "max_colours_per_layer": 2,
+          "layers_over_nozzles": 0
+        }
+      },
+      {
+        "name": "colour_thickness",
+        "status": "pass",
+        "message": "every colour part is at least 3 layers thick",
+        "data": {}
+      }
+    ],
+    "stats": {
+      "triangles": 1456,
+      "vertices": 730,
+      "bbox_min": [
+        -45.0,
+        -45.0,
+        0.0
+      ],
+      "bbox_max": [
+        45.0,
+        45.0,
+        4.0
+      ],
+      "size": [
+        90.0,
+        90.0,
+        4.0
+      ],
+      "surface_area_mm2": 13685.49,
+      "volume_mm3": 25368.517,
+      "bodies": 1
+    }
+  },
+  "colour": "black"
+}

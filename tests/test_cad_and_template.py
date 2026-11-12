@@ -125,7 +125,7 @@ class TemplateTests(unittest.TestCase):
         self.assertFalse((self.project.parent / "escape").exists())
 
     def test_failed_check_writes_nothing(self):
-        res = self.run_build({"PRINTER_BED = (220, 220, 250)": "PRINTER_BED = (40, 40, 40)"})
+        res = self.run_build({"PRINTER_BED = None ": "PRINTER_BED = (40, 40, 40) "})
         self.assertEqual(res.returncode, 1)
         self.assertFalse((self.project / "out").exists())
 

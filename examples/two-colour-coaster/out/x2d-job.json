@@ -1,0 +1,79 @@
+{
+  "name": "coaster",
+  "template": "",
+  "objects": [
+    {
+      "name": "coaster",
+      "parts": [
+        {
+          "stl": "coaster-base.stl",
+          "filament": null,
+          "colour": "black",
+          "colour_hex": "#161616"
+        },
+        {
+          "stl": "coaster-star.stl",
+          "filament": null,
+          "colour": "yellow",
+          "colour_hex": "#fff144"
+        }
+      ]
+    }
+  ],
+  "nozzles": {},
+  "settings": {},
+  "output": "coaster.3mf",
+  "design": {
+    "from": "3d-print-design",
+    "format": 1,
+    "printer": "Bambu Lab X2D",
+    "material": "PLA",
+    "layer_mm": 0.2,
+    "nozzle_mm": 0.4,
+    "supports": false,
+    "assembly": true,
+    "parts": [
+      {
+        "stl": "coaster-base.stl",
+        "colour": "black",
+        "colour_hex": "#161616",
+        "z_mm": [
+          0.0,
+          4.0
+        ],
+        "layers": 20,
+        "volume_mm3": 24707.3
+      },
+      {
+        "stl": "coaster-star.stl",
+        "colour": "yellow",
+        "colour_hex": "#fff144",
+        "z_mm": [
+          3.4,
+          4.0
+        ],
+        "layers": 3,
+        "volume_mm3": 661.3
+      }
+    ],
+    "colour_layers": {
+      "layers": 20,
+      "mixed_layers": 3,
+      "max_colours_per_layer": 2
+    },
+    "suggested_nozzles": {
+      "coaster-base.stl": "right",
+      "coaster-star.stl": "left"
+    },
+    "notes": [
+      "2 colours: checked against the 235.5 x 256 x 256 mm that both nozzles reach; leave room for the prime tower too",
+      "plate: Textured PEI Plate by default (the bottom face takes its texture)"
+    ],
+    "todo": [
+      "template: the .3mf saved from Bambu Studio (x2d-print step 3)",
+      "filament: for each part, the number of the template filament with that colour",
+      "nozzles: from the template's filament numbers, following design.suggested_nozzles",
+      "check that the template's filaments are PLA"
+    ]
+  }
+}

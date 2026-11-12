@@ -172,7 +172,10 @@ def build_manifest(folder: Path, bed: Optional[Sequence[float]] = None,
                     found_bed = cand
             except (TypeError, ValueError):
                 pass
-        parts.append({"file": fname, "name": stem, "color": color})
+        part = {"file": fname, "name": stem, "color": color}
+        if meta.get("assembly") is True:
+            part["assembly"] = True  # a colour part printed in place: may rest on another part
+        parts.append(part)
     bed_dims = tuple(bed) if bed else (found_bed or DEFAULT_BED)
     return {"bed": list(bed_dims), "parts": parts}
 

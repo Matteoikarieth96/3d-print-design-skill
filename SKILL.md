@@ -1,6 +1,6 @@
 ---
 name: 3d-print-design
-description: Design a functional or decorative part for FDM 3D printing in code, from a verbal idea to a checked STL with a local browser preview, for any printer. Use it whenever the user wants to design, model or adapt a part to 3D print (a bracket, hook, clip, holder, support, spacer, enclosure, box, knob, adapter, cable clip, wall mount), asks for an STL, asks about tolerances, press fits, snap fits, screw holes or heat-set inserts for a print, or says things like "disegnami un pezzo", "modellalo in 3D", "fammi un supporto", "un gancio da stampare", "una clip", "un contenitore da stampare in 3D", "che tolleranza metto". It interviews the user first, writes a parametric build script (trimesh + manifold3d + shapely), runs printability checks before any STL is written, previews in the browser through a local server, and hands over STLs plus a print sheet. It never talks to a printer. Slicing and printing stay with the user.
+description: Design a functional or decorative part for FDM 3D printing in code, from a verbal idea to a checked STL with a local browser preview, for any printer. Use it whenever the user wants to design, model or adapt a part to 3D print (a bracket, hook, clip, holder, support, spacer, enclosure, box, knob, adapter, cable clip, wall mount), asks for an STL, asks about tolerances, press fits, snap fits, screw holes or heat-set inserts for a print, or says things like "disegnami un pezzo", "modellalo in 3D", "fammi un supporto", "un gancio da stampare", "una clip", "un contenitore da stampare in 3D", "che tolleranza metto". It interviews the user first, writes a parametric build script (trimesh + manifold3d + shapely), runs printability checks before any STL is written, previews in the browser through a local server, and hands over STLs plus a print sheet. For a Bambu Lab X2D it also writes a draft job for the x2d-print skill. It never talks to a printer. Slicing and printing stay with the user.
 ---
 
 # 3d-print-design
@@ -35,6 +35,10 @@ Read [references/intake.md](references/intake.md). Ask in the user's language.
   say which defaults you used.
 - Round 1 (usually): what it does and where it lives, critical dimensions and
   which mate with other parts (fit type), printer + nozzle + bed size, material.
+  If the printer is a **Bambu Lab X2D**, read
+  [references/printers.md](references/printers.md) now: it sets the profile,
+  the build volume and the colour rules, and ask in round 1 how many colours
+  and which one is the main (dominant) colour.
 - Round 2 (only if needed): load/heat/outdoor, colours, supports allowed,
   orientation constraints, quantity, looks vs strength, deadline.
 - If the part reproduces a real person's face or likeness: ask for consent now
@@ -78,13 +82,21 @@ geometry already passes the checks.
    - every number gets a comment saying why ("20 layers, stiff enough", "measured");
    - flat feature heights are multiples of `LAYER`;
    - clearances come from `FITS[...]` (fits.json or defaults), never guessed inline;
-   - `NAME` is lowercase letters, digits and dashes (the harness refuses others).
+   - `NAME` is lowercase letters, digits and dashes (the harness refuses others);
+   - `PRINTER` is the profile from [references/printers.md](references/printers.md)
+     (`"generic"` or `"bambu-x2d"`); `PRINTER_BED = None` uses its build volume;
+   - `COLOUR_NAME` is the filament colour in words (`{suffix: name}` per part),
+     `COLOR` the preview hex: both go into the hand-off;
+   - several colours of ONE object: one part per colour, `ASSEMBLY = True`
+     (and `ASSEMBLY_BODIES`, default 1, for the joined object).
 4. For a genuinely new shape, write `build_part()` once in the GEOMETRY block
    using parameter names only (no bare numbers except 0, 1, 2 and halves).
    Helpers are in `"$SKILL/scripts/cad.py"`: `rounded_rect`, `box2d`,
    `chamfered_extrude`, `countersunk_cutter`, `counterbore_cutter`, `hole`,
    `insert_hole`, `teardrop_hole`, `stand_up`, `mirror`, `union`, `difference`.
    Return `{suffix: solid}` to write several STLs (multi-part, multi-colour).
+   For colours, cut each accent out of the base with the same outline so the
+   parts touch without overlapping (`examples/two-colour-coaster`).
 5. Never edit below the HARNESS line. It is what guarantees steps 5 and 9.
 
 Apply [references/design-rules.md](references/design-rules.md) while choosing
@@ -102,7 +114,11 @@ removes it itself). The harness runs `printcheck.check_printable` and writes `ou
 `out/<name>.json` only if there are no errors. Read every warning and decide:
 fix it, or accept it and say so in the print sheet. Errors you will meet:
 not watertight, wrong body count (loose piece), not on the bed, too big for the
-bed, overhangs when supports are not allowed, failed probe points. To check an
+bed, overhangs when supports are not allowed, failed probe points. With
+`ASSEMBLY = True` each colour part is checked on its own (watertight, bodies,
+widths, layers, probes) and then all of them joined (on the bed, build volume,
+overhangs, plus `overlap`, `colour_layers`, `colour_thickness`): an inlay
+resting on the base is fine, two colours sharing volume is an error. To check an
 STL from elsewhere (data only, never run code that came with it):
 `"$SKILL/.venv/bin/python" -P "$SKILL/scripts/printcheck.py" part.stl --bed 220x220x250 --layer 0.2 --overhang 45`.
 
@@ -155,8 +171,20 @@ Hand over, with paths:
    layer height, walls/infill suggestion, brim if tall and narrow, colour change
    layer if any (layer number = change height / layer height, check it in the
    slicer preview), quantity, and every printcheck warning you accepted.
+4. **The hand-off**, when the profile has one (today `bambu-x2d`):
+   `out/x2d-job.json`, a draft job for the **x2d-print** skill. Say what it
+   holds (each STL with its colour, layers per colour, suggested nozzles) and
+   that the template and the filament numbers are set in x2d-print, from the
+   person's own Bambu Studio. See [references/printers.md](references/printers.md).
 
 ## Step 10: the user slices and prints
+
+With the X2D profile, offer the next step: the **x2d-print** skill turns
+`out/` (STLs + `x2d-job.json`) into a ready Bambu Studio project. If it is
+installed (`~/.claude/skills/x2d-print`), use it on the same `out/` folder when
+the person says yes; if not, point to
+https://github.com/Matteoikarieth96/x2d-print-skill. Either way the design is
+finished: the STLs and the print sheet work in any slicer.
 
 Say clearly that you do not slice or start the print. Remind briefly, from
 [references/safety.md](references/safety.md): do not leave the printer

@@ -11,9 +11,9 @@ show progress; fill the rest with the defaults below and say which you used.
 | 2 | Critical dimensions, measured with calipers, and which ones are critical | A printed part is only as right as its input numbers; non-critical sizes can be rounded | measured values; "critical: yes/no" per value | ask the user to measure; mark guesses `default` in the table |
 | 3 | Mating parts and fit type | Clearance per side differs a lot between fits | press (does not come apart), snug (by hand, no play), sliding (moves, little play), free (loose) | snug for lids and plugs, free for screw shanks |
 | 4 | Load, heat, outdoor or UV exposure | Material choice and layer orientation; PLA softens around 55 to 60 C and creeps | light / moderate / heavy; indoor / near heat / outdoors | light, indoor, room temperature |
-| 5 | Printer model, build volume, nozzle diameter | Bed fit check, minimum wall (2 x nozzle), overhang behaviour | e.g. "220 x 220 x 250, 0.4 nozzle" | 220 x 220 x 250 mm, 0.4 mm nozzle, 0.2 mm layers |
+| 5 | Printer model, build volume, nozzle diameter | Bed fit check, minimum wall (2 x nozzle), overhang behaviour; a printer with a profile (Bambu Lab X2D) sets these and adds a hand-off | e.g. "220 x 220 x 250, 0.4 nozzle", "Bambu Lab X2D" | 220 x 220 x 250 mm, 0.4 mm nozzle, 0.2 mm layers |
 | 6 | Material | Fits, strength, temperature, flex for snaps | PLA (easy, stiff) / PETG (tougher, heat to about 75 C) / TPU (flexible) / ABS or ASA (heat, outdoor) only with ventilation | PLA indoors, PETG for clips and outdoor-ish, ASA for full sun with ventilation |
-| 7 | Colours | Single colour, a colour change at a layer, or several materials changes how you split the model | single / colour change at a height / multi-material (one STL per colour) | single colour |
+| 7 | Colours | Single colour, a colour change at a layer, or several materials changes how you split the model | single / colour change at a height / multi-material (one STL per colour); on the X2D also which colour is the main one | single colour |
 | 8 | Quantity | Many copies favour short print time and no supports | 1 / a few / many | 1 |
 | 9 | Looks vs strength | Sets wall count, infill, chamfers vs sharp edges, visible seams | looks first / balanced / strength first | balanced |
 | 10 | Supports allowed | Without supports every overhang must be designed out | no supports (Recommended for functional parts) / supports OK / only easy-to-remove | no supports |
@@ -23,7 +23,7 @@ show progress; fill the rest with the defaults below and say which you used.
 
 ## Suggested first round (one `AskUserQuestion` call)
 
-1. Printer and nozzle: "220 x 220 bed, 0.4 nozzle (Recommended)", "smaller bed (180 or less)", "larger bed (250+)".
+1. Printer and nozzle: "220 x 220 bed, 0.4 nozzle (Recommended)", "Bambu Lab X2D", "smaller bed (180 or less)", "larger bed (250+)". If the person already named their printer, skip this and use its profile.
 2. Material: "PETG (Recommended for clips and functional parts)", "PLA", "TPU", "ABS/ASA (needs ventilation)".
 3. Supports: "No supports (Recommended)", "Supports are fine".
 4. Fit for the mating part: "Snug (Recommended)", "Press", "Sliding", "Free".

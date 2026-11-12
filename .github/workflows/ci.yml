@@ -26,3 +26,4 @@ jobs:
           export PRINT3D_SKILL_DIR="$GITHUB_WORKSPACE"
           cd "$GITHUB_WORKSPACE/examples/cable-clip" && python -P build.py
           cd "$GITHUB_WORKSPACE/examples/calibration-coupon" && python -P "$GITHUB_WORKSPACE/scripts/calibration_coupon.py" build --out out
+          cd "$GITHUB_WORKSPACE/examples/two-colour-coaster" && python -P build.py
