@@ -65,6 +65,23 @@ calibration coupon took 41 min against 28 estimated, the plate with 25 holes 35 
 independent test confirmed it. Grams lean the other way: the model is usually a little high (more so on small
 parts, by up to 15 %).
 
+## Layer height (0.28 mm) check
+
+Two extra real slices (Bambu Studio 02.09.01.70, X2D, PLA, 3 walls, 15 % infill, same
+process with only `layer_height` changed), not in the CSV because they are outside the
+measured field:
+
+| Part | 0.20 mm | 0.28 mm | Model at 0.28 |
+|---|---|---|---|
+| coaster base, 100 mm across, 4 mm tall | 30.9 min, 16.9 g | 34.1 min, 20.0 g | 32.9 min (-3.5 %) |
+| cylinder 40 x 80 mm | 66.5 min, 34.2 g | 50.7 min, 33.5 g | 48.4 min (-4.5 %) |
+
+Thicker layers print walls and sparse infill at about the same mm/s, so faster per mm3,
+while top and bottom solid layers do not speed up and get thicker (5 x 0.28 mm instead
+of 5 x 0.20 mm). The model scales the walls' and the infill's time by 0.20 / layer and
+leaves the solid layers as they are: at 0.20 mm nothing changes. Two slices are not a
+calibration: outside 0.20 mm the estimate stays "rough".
+
 ## What is NOT covered
 
 The estimate is measured only for: **Bambu Lab X2D, PLA, 0.4 mm nozzle, 0.2 mm layers, no

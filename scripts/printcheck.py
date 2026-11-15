@@ -675,7 +675,7 @@ def check_printable(
     if fits and fits_z:
         checks.append(Check("build_volume", PASS, f"fits {bx:g} x {by:g} x {bz:g} with {margin:g} mm margin", vdata))
     elif fits_rot and fits_z:
-        checks.append(Check("build_volume", WARN, "fits only rotated 90 degrees about Z: rotate it in the slicer", vdata))
+        checks.append(Check("build_volume", WARN, "fits only rotated 90 degrees about Z: x2d-print turns it; in another slicer, rotate it", vdata))
     else:
         why = []
         if not (fits or fits_rot):

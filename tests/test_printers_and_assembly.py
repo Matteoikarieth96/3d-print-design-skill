@@ -170,6 +170,17 @@ class BuildHandoffTests(unittest.TestCase):
         return subprocess.run([sys.executable, "-P", "build.py", "--thin-walls", "0"], cwd=self.project,
                               env=self.env, capture_output=True, text=True, timeout=300)
 
+    def test_quantity_gives_a_one_copy_estimate(self):
+        src = (ROOT / "templates" / "build.py").read_text().replace(
+            'PRINTER = "generic" ', 'PRINTER = "bambu-x2d" ').replace("QUANTITY = 1 ", "QUANTITY = 4 ")
+        res = self.build(src)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        est = json.loads((self.project / "out" / "x2d-job.json").read_text())["design"]["estimate"]
+        one = est["one_copy"]
+        self.assertLess(one["grams"], est["grams"] / 3)
+        # one copy alone pays the whole preparation: more than a quarter of the time for 4
+        self.assertGreater(one["minutes"], est["minutes"] / 4)
+
     def test_generic_template_writes_no_handoff(self):
         res = self.build((ROOT / "templates" / "build.py").read_text())
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
@@ -294,7 +305,9 @@ class BuildHandoffTests(unittest.TestCase):
         out = self.project / "out"
         self.assertTrue((out / "variants.md").is_file())
         versions = json.loads((out / "variants.json").read_text())["versions"]
-        self.assertEqual([v["name"] for v in versions], ["standard", "light", "strong"])
+        self.assertEqual([v["name"] for v in versions], ["standard", "light", "strong", "fast"])
+        est_by = {v["name"]: v["estimate"] for v in versions}
+        self.assertFalse(est_by["fast"]["in_calibration"])          # 0.28 mm layers: rough
         grams = {v["name"]: v["estimate"]["grams"] for v in versions}
         self.assertLess(grams["light"], grams["standard"])
         self.assertLess(grams["standard"], grams["strong"])
@@ -306,6 +319,8 @@ class BuildHandoffTests(unittest.TestCase):
         self.assertEqual(by["light"]["stl"], {"mounting-plate.stl": "variants/light/mounting-plate.stl"})
         self.assertTrue((out / "variants" / "light" / "mounting-plate.stl").is_file())
         self.assertNotIn("stl", by["strong"])
+        self.assertEqual(by["fast"]["settings"]["layer_height"], "0.28")
+        self.assertEqual(by["light"]["settings"]["layer_height"], "0.2")
 
     def test_unknown_variant_and_unlisted_vary_name_refused(self):
         src = (ROOT / "templates" / "build.py").read_text()

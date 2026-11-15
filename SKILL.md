@@ -179,7 +179,14 @@ checks it, and prints a table (also in `out/variants.md`):
 
 Show the table and say in one line what each version is for. For a part that
 carries load (hook, bracket, holder), say the light version is not for it and
-recommend standard or strong. Then look for bigger savings in the design itself
+recommend standard or strong. Read the "vs standard" column out loud: when the
+versions differ by only a few minutes (small parts), say so, and that the choice
+is about strength and filament, not time. The template also has **fast** (0.28 mm
+layers): it saves time only on tall parts whose time goes into walls and infill
+(an 80 mm cylinder: 51 instead of 67 min); on flat parts it is slower and heavier,
+because top and bottom layers get thicker (the coaster: 34 instead of 31 min). Its
+estimate is marked rough. When the table shows fast is not faster, drop it from
+`VARIANTS` and say why; when it is, mention the visible layer lines. Then look for bigger savings in the design itself
 and offer them as extra versions (add them to `VARIANTS` with `cad.vary`,
 rebuild with `--variants`):
 - **smaller or thinner** where nothing has to fit (at 80 % size a solid part
