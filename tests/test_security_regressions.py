@@ -432,6 +432,8 @@ class ServingTests(TempDirCase):
         self.assertNotIn("https://cdnjs.cloudflare.com;", csp)
 
 
+@unittest.skipUnless((ROOT / ".github" / "workflows" / "ci.yml").is_file(),
+                     "no .github/ here (a copy of the skill, e.g. inside the starter kit)")
 class CiHygieneTests(unittest.TestCase):
     def test_ci_pins_and_env(self):
         ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
