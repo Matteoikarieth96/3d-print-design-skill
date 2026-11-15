@@ -144,11 +144,13 @@ def build_coupon(peg_d: float = 6.0, plate_t: float = 4.0, foot: float = 0.4):
 def cmd_build(args) -> int:
     import cad
     import printcheck
+    import printers
 
     project = Path.cwd()
     try:
         out_dir = cad.safe_out_dir(project, args.out)
-        bed = printcheck.parse_bed(args.bed)
+        profile = printers.get(args.printer)
+        bed = printcheck.parse_bed(args.bed) if args.bed else printers.bed_for(profile, 1)
         solid, legend = build_coupon(peg_d=args.peg)
     except ValueError as exc:
         print(f"refusing: {safe_text(exc)}", file=sys.stderr)
@@ -170,6 +172,18 @@ def cmd_build(args) -> int:
         print(f"refusing: {safe_text(exc)}", file=sys.stderr)
         return 2
     print(f"wrote {safe_text(stl)} and {safe_text(meta)}")
+    if profile.get("handoff"):
+        z0, z1 = float(mesh.bounds[0][2]), float(mesh.bounds[1][2])
+        part = {"stl": stl.name, "colour": args.colour, "colour_hex": "#e0a030", "z": (z0, z1),
+                "layers": int(round((z1 - z0) / args.layer)), "volume_mm3": float(mesh.volume)}
+        settings = printers.slicer_settings(walls=3, infill=15, layer=args.layer, top_layers=5, bottom_layers=3,
+                                            supports=False)
+        job = printers.x2d_job("calibration-coupon", [part], assembly=False, material=args.material,
+                               layer=args.layer, nozzle=args.nozzle, supports=False, profile=profile,
+                               printer_notes=printers.notes(profile, args.material, 1, False), settings=settings)
+        printers.keep_filled(job, printers.read_handoff(out_dir, profile["handoff_file"]))
+        path = printers.write_handoff(out_dir, job, profile["handoff_file"])
+        print(f"wrote {safe_text(path)}: draft job for the {profile['handoff']} skill")
     print("print it WITHOUT supports, 0.2 mm layers, the material you will use for real parts")
     return 0
 
@@ -233,7 +247,9 @@ def main(argv=None) -> int:
     b = sub.add_parser("build", help="write the coupon STL")
     b.add_argument("--out", default="out", help="output folder inside the current folder (default out)")
     b.add_argument("--peg", type=float, default=6.0, help="nominal peg size in mm (default 6)")
-    b.add_argument("--bed", default="220x220x250", help="build volume, mm (default 220x220x250)")
+    b.add_argument("--printer", default="generic", help="printer profile: generic or bambu-x2d (writes x2d-job.json)")
+    b.add_argument("--bed", default="", help="build volume, mm, e.g. 220x220x250 (default: the profile's)")
+    b.add_argument("--colour", default="any colour", help="filament colour in words, for the hand-off")
     b.add_argument("--nozzle", type=float, default=0.4)
     b.add_argument("--layer", type=float, default=0.2)
     b.add_argument("--material", default="PLA", help="for the mass estimate only")

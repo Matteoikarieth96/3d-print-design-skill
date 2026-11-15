@@ -118,29 +118,65 @@ def colour_layers(parts: Sequence[dict], layer: float) -> dict:
     return {"layers": n, "mixed_layers": mixed, "max_colours_per_layer": most}
 
 
-def suggest_nozzles(profile: dict, parts: Sequence[dict], material: str) -> Dict[str, str]:
-    """Dominant colour (most layers, then most volume) on its own nozzle.
+def _by_colour(parts: Sequence[dict]) -> Dict[str, dict]:
+    """Group parts by colour name: layers = most layers of any part, volume summed."""
+    out: Dict[str, dict] = {}
+    for p in parts:
+        c = out.setdefault(p.get("colour") or "", {"layers": 0, "volume_mm3": 0.0})
+        c["layers"] = max(c["layers"], int(p.get("layers", 0)))
+        c["volume_mm3"] += float(p.get("volume_mm3", 0.0))
+    return out
 
-    On the X2D the AMS feeds the left nozzle and the external spool the
-    right one, so the dominant colour goes right (external spool) and the
-    accents left (AMS). One colour, or TPU: everything left.
+
+def suggest_nozzles(profile: dict, parts: Sequence[dict], material: str, mixed_layers: Optional[int] = None) -> Dict[str, str]:
+    """Which nozzle each COLOUR should use (keyed by colour name, job format 2).
+
+    On the X2D the AMS feeds the left nozzle and the external spool the right
+    one. Everything stays left (AMS only, nothing to load on the external
+    holder) when there is one colour, when the material is TPU, or when the
+    colours only change by height (no layer holds two colours: one change per
+    boundary, x2d-print colour rule 2). Otherwise the dominant colour (most
+    layers, then most volume) goes right on the external spool and the
+    accents left in the AMS: a nozzle switch costs no purge, a swap does.
     """
     if profile["name"] != "bambu-x2d" or not parts:
         return {}
-    if len(parts) == 1 or (material or "").upper() in profile.get("right_nozzle_refuses", ()):
-        return {p["stl"]: "left" for p in parts}
-    dominant = max(parts, key=lambda p: (p["layers"], p.get("volume_mm3", 0.0)))
-    return {p["stl"]: ("right" if p is dominant else "left") for p in parts}
+    colours = _by_colour(parts)
+    all_left = {c: "left" for c in colours}
+    if len(colours) == 1 or (material or "").upper() in profile.get("right_nozzle_refuses", ()):
+        return all_left
+    if mixed_layers == 0:
+        return all_left
+    dominant = max(colours, key=lambda c: (colours[c]["layers"], colours[c]["volume_mm3"]))
+    return {c: ("right" if c == dominant else "left") for c in colours}
+
+
+def slicer_settings(*, walls: int, infill: float, layer: float, top_layers: int, bottom_layers: int,
+                    supports: bool) -> Dict[str, str]:
+    """The design's print settings as Bambu Studio strings (job `settings`)."""
+    return {
+        "layer_height": f"{layer:g}",
+        "wall_loops": str(int(walls)),
+        "sparse_infill_density": f"{infill:g}%",
+        "top_shell_layers": str(int(top_layers)),
+        "bottom_shell_layers": str(int(bottom_layers)),
+        "enable_support": "1" if supports else "0",
+    }
 
 
 def x2d_job(name: str, parts: Sequence[dict], *, assembly: bool, material: str, layer: float,
-            nozzle: float, supports: bool, profile: dict, printer_notes: Sequence[str]) -> dict:
-    """Draft job for the x2d-print skill (its templates/job.example.json format).
+            nozzle: float, supports: bool, profile: dict, printer_notes: Sequence[str],
+            settings: Optional[Dict[str, str]] = None, estimate: Optional[dict] = None,
+            variants: Optional[Sequence[dict]] = None, variant: str = "standard", quantity: int = 1,
+            first_print: Optional[bool] = None) -> dict:
+    """Draft job for the x2d-print skill (format 2, see its SKILL.md).
 
     `template` and each part's `filament` stay empty on purpose: they come
-    from the Bambu Studio template the person saves in x2d-print step 3,
-    because only that file knows which colour sits in which AMS slot.
-    x2d-print refuses the job until they are filled.
+    from the Bambu Studio template the person saves in x2d-print, because
+    only that file knows which colour sits in which filament slot. x2d-print
+    refuses the job until they are filled. `settings` carries the version
+    chosen here (walls, infill, layer height) so the .3mf prints what was
+    estimated; `variants` lists the other versions to compare by slicing.
     """
     stl_parts = [{"stl": p["stl"], "filament": None, "colour": p["colour"], "colour_hex": p["colour_hex"]}
                  for p in parts]
@@ -148,40 +184,96 @@ def x2d_job(name: str, parts: Sequence[dict], *, assembly: bool, material: str, 
         objects = [{"name": name, "parts": stl_parts}]
     else:
         objects = [{"name": Path(p["stl"]).stem, "parts": [p]} for p in stl_parts]
-    mix = colour_layers([{"stl": p["stl"], "z": p["z"]} for p in parts], layer) if assembly else {}
-    nozzles = suggest_nozzles(profile, parts, material)
-    settings = {"enable_support": "1"} if supports else {}
+    spans = [{"stl": p["stl"], "z": p["z"]} for p in parts]
+    mix = colour_layers(spans, layer) if assembly else {}
+    nozzles = suggest_nozzles(profile, parts, material, mix.get("mixed_layers") if assembly else 0)
+    if settings is None:
+        settings = {"enable_support": "1"} if supports else {}
     todo = [
-        "template: the .3mf saved from Bambu Studio (x2d-print step 3)",
+        "template: the .3mf saved from Bambu Studio (x2d-print), after loading the colours below",
         "filament: for each part, the number of the template filament with that colour",
-        "nozzles: from the template's filament numbers, following design.suggested_nozzles",
+        "nozzles: filament number -> left/right, from design.suggested_nozzles (keyed by colour)",
         f"check that the template's filaments are {material}",
     ]
-    return {
+    design = {
+        "from": "3d-print-design",
+        "format": 2,
+        "printer": profile["label"],
+        "material": material,
+        "layer_mm": layer,
+        "nozzle_mm": nozzle,
+        "supports": bool(supports),
+        "assembly": bool(assembly),
+        "variant": variant,
+        "quantity": max(1, int(quantity)),
+        "parts": [{"stl": p["stl"], "colour": p["colour"], "colour_hex": p["colour_hex"],
+                   "z_mm": [round(p["z"][0], 3), round(p["z"][1], 3)], "layers": p["layers"],
+                   "volume_mm3": round(p.get("volume_mm3", 0.0), 1)} for p in parts],
+        "colour_layers": mix,
+        "suggested_nozzles": nozzles,
+        "notes": list(printer_notes),
+        "todo": todo,
+    }
+    if first_print is not None:
+        design["first_print"] = bool(first_print)
+    if estimate:
+        design["estimate"] = estimate
+    job = {
         "name": name,
         "template": "",
         "objects": objects,
         "nozzles": {},
-        "settings": settings,
+        "settings": dict(settings),
         "output": f"{name}.3mf",
-        "design": {
-            "from": "3d-print-design",
-            "format": 1,
-            "printer": profile["label"],
-            "material": material,
-            "layer_mm": layer,
-            "nozzle_mm": nozzle,
-            "supports": bool(supports),
-            "assembly": bool(assembly),
-            "parts": [{"stl": p["stl"], "colour": p["colour"], "colour_hex": p["colour_hex"],
-                       "z_mm": [round(p["z"][0], 3), round(p["z"][1], 3)], "layers": p["layers"],
-                       "volume_mm3": round(p.get("volume_mm3", 0.0), 1)} for p in parts],
-            "colour_layers": mix,
-            "suggested_nozzles": nozzles,
-            "notes": list(printer_notes),
-            "todo": todo,
-        },
+        "design": design,
     }
+    if variants:
+        job["variants"] = list(variants)
+    return job
+
+
+def keep_filled(new: dict, old: Optional[dict]) -> List[str]:
+    """Carry over what x2d-print filled in (template, filament numbers, nozzles).
+
+    Only when every part keeps its STL name and colour: otherwise the filament
+    numbers could point at the wrong colour, so they are reset and the caller
+    says so. Returns notes for the build log.
+    """
+    if not isinstance(old, dict):
+        return []
+    def colours(job):
+        return sorted((str(p.get("stl")), str(p.get("colour"))) for o in job.get("objects", []) if isinstance(o, dict)
+                      for p in o.get("parts", []) if isinstance(p, dict))
+    filled = bool(old.get("template")) or any(isinstance(p.get("filament"), int) for o in old.get("objects", [])
+                                              if isinstance(o, dict) for p in o.get("parts", []) if isinstance(p, dict))
+    if not filled:
+        return []
+    if colours(new) != colours(old):
+        return ["the parts or colours changed: template and filament numbers in the old x2d-job.json were reset, "
+                "fill them again in x2d-print"]
+    if isinstance(old.get("template"), str):
+        new["template"] = old["template"]
+    fil = {str(p.get("stl")): p.get("filament") for o in old.get("objects", []) if isinstance(o, dict)
+           for p in o.get("parts", []) if isinstance(p, dict)}
+    for o in new["objects"]:
+        for p in o["parts"]:
+            if isinstance(fil.get(p["stl"]), int):
+                p["filament"] = fil[p["stl"]]
+    if isinstance(old.get("nozzles"), dict):
+        new["nozzles"] = dict(old["nozzles"])
+    return ["kept the template, filament numbers and nozzles already filled in x2d-job.json"]
+
+
+def read_handoff(out_dir: Path, filename: str) -> Optional[dict]:
+    """The previous hand-off file, or None (missing, unreadable or a symlink)."""
+    path = Path(out_dir) / filename
+    if not path.is_file() or path.is_symlink():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def write_handoff(out_dir: Path, job: dict, filename: str) -> Path:

@@ -72,8 +72,13 @@ def load_fits(project_dir: Union[str, Path]) -> dict:
     """
     fits = dict(DEFAULT_FITS)
     fits["source"] = "defaults (print the calibration coupon to measure your printer)"
-    path = Path(project_dir).resolve() / "fits.json"
+    project = Path(project_dir).resolve()
+    path = project / "fits.json"
     if not path.is_file():
+        # one coupon per printer and material: a fits.json in the projects folder
+        # (the parent, e.g. ~/3d-print-design/fits.json) serves every new part
+        path = project.parent / "fits.json"
+    if not path.is_file() or path.is_symlink():
         return fits
     data = json.loads(path.read_text(encoding="utf-8"))
     clear = data.get("clearance_per_side", {})
@@ -93,6 +98,46 @@ def load_fits(project_dir: Union[str, Path]) -> dict:
     fits["source"] = f"fits.json ({str(data.get('printer', 'printer not named'))[:60]}, " \
                      f"{str(data.get('material', 'material not named'))[:20]})"
     return fits
+
+
+# --------------------------------------------------------------------------
+# Versions (light / standard / strong ...) to compare before printing
+# --------------------------------------------------------------------------
+BASE_VARIANT = "standard"
+_VARY_NAMES: set = set()
+
+
+def selected_variant(argv: Optional[Sequence[str]] = None) -> str:
+    """The version this run builds: `--variant NAME` on the command line, else "standard".
+
+    Read straight from sys.argv because the PARAMETERS block runs before the
+    harness parses its arguments, and every vary() call needs the answer.
+    """
+    import sys
+    args = list(sys.argv[1:] if argv is None else argv)
+    for i, a in enumerate(args):
+        if a == "--variant" and i + 1 < len(args):
+            return args[i + 1]
+        if a.startswith("--variant="):
+            return a.split("=", 1)[1]
+    return BASE_VARIANT
+
+
+def vary(default, **versions):
+    """A parameter that changes between versions: `WALLS = cad.vary(3, light=2, strong=4)`.
+
+    Returns the value for the version being built (selected_variant()), else
+    `default`, the standard version. The harness checks that every version
+    named here is listed in VARIANTS.
+    """
+    _VARY_NAMES.update(k.replace("_", "-") for k in versions)
+    name = selected_variant()
+    return versions.get(name.replace("-", "_"), default)
+
+
+def vary_names() -> set:
+    """Version names used by vary() so far (with dashes, as in VARIANTS)."""
+    return set(_VARY_NAMES)
 
 
 def segments_for(d: float, chord: float = 0.4, lo: int = 24, hi: int = 180) -> int:

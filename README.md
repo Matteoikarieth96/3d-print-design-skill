@@ -24,14 +24,15 @@ no starting prints. You slice and print with your own slicer.
 5. **printcheck before export**: watertight and consistent winding, positive volume, body count, sits on the bed with real contact area, fits the build volume with a margin, overhang report (bridges counted separately), layer alignment, small and horizontal holes, optional thin-wall sampling, and probe points that catch a mirrored (wrong-hand) part. Errors block the STL.
 6. **Preview**: `scripts/serve.py` serves the output folder on 127.0.0.1 to a three.js viewer: per-part colours, orbit, bed grid of your printer's size, section plane, bounding box readout in mm, dark and light.
 7. **Iterate on numbers**, not on prints.
-8. **Calibration coupon** for fits: holes and pegs at 0.00 to 0.40 mm per side, read by counting notches, recorded into `fits.json` that the build scripts use.
-9. **Delivery**: STL(s), metadata JSON (bounding box, volume, mass upper bound, triangle count, check results, parameters), preview, print sheet, and for the X2D a draft job for x2d-print.
+8. **Versions with time and filament**: every build estimates grams, metres and print time; `build.py --variants` builds light / standard / strong versions (or your own, with `cad.vary`) and compares them in a table, so you choose before printing. On the Bambu Lab X2D the estimate was fitted on 31 real Bambu Studio slices (grams within about 10 %, time within about 20 %).
+9. **Calibration coupon** for fits: holes and pegs at 0.00 to 0.40 mm per side, read by counting notches, recorded into `fits.json` that the build scripts use.
+10. **Delivery**: STL(s), metadata JSON (bounding box, volume, estimate, triangle count, check results, parameters), preview, print sheet, and for the X2D a draft job for x2d-print.
 
 ## Multicolour parts and the Bambu Lab X2D
 
 - **Printer profiles** (`PRINTER` in `build.py`): `generic` (220 x 220 x 250 mm unless you set `PRINTER_BED`) or `bambu-x2d`. The X2D profile checks against 256 x 256 x 261 mm, or the 235.5 x 256 x 256 mm both nozzles reach when the part has two or more colours. Details: [references/printers.md](references/printers.md).
 - **One STL per colour, checked as one object.** Return one part per colour and set `ASSEMBLY = True`: each colour part is checked alone (watertight, widths, layers), then all of them joined (on the bed, build volume, overhangs). Extra checks: colour parts must touch without sharing volume, at least 3 layers thick, and the build counts the layers that need a filament change on the same nozzle.
-- **Hand-off to x2d-print:** with the X2D profile the build also writes `out/x2d-job.json`, a draft in the x2d-print job format: each STL with its colour, the layers each colour spans, the suggested nozzle (dominant colour on its own nozzle). The template and the filament numbers are left empty on purpose: x2d-print fills them from your own Bambu Studio, which knows what is loaded in the AMS. The two skills stay separate; this is a JSON file, nothing runs the other skill.
+- **Hand-off to x2d-print:** with the X2D profile the build also writes `out/x2d-job.json`, a draft in the x2d-print job format: each STL with its colour, the layers each colour spans, the suggested nozzle per colour (dominant colour on its own nozzle when colours share layers, all on the left when they only change by height), the chosen version's walls, infill and layer height, and the other versions to compare. A rebuild keeps what x2d-print already filled in. The template and the filament numbers are left empty on purpose: x2d-print fills them from your own Bambu Studio, which knows what is loaded in the AMS. The two skills stay separate; this is a JSON file, nothing runs the other skill.
 
 ![Two-colour coaster: black base, yellow star inlay](docs/two-colour-coaster.png)
 
@@ -96,7 +97,7 @@ Calibration coupon:
 ```
 "$S/.venv/bin/python" -P "$S/scripts/calibration_coupon.py" build --out out
 # print it, test the pegs, then:
-"$S/.venv/bin/python" -P "$S/scripts/calibration_coupon.py" record --press 0.10 --snug 0.15 --sliding 0.20 --free 0.30 --overhang 45 --material PETG
+"$S/.venv/bin/python" -P "$S/scripts/calibration_coupon.py" record --press 0.10 --snug 0.15 --sliding 0.20 --free 0.30 --overhang 45 --printer "My printer" --material PETG
 ```
 
 ![Calibration coupon](docs/calibration-coupon.png)
@@ -107,6 +108,7 @@ Calibration coupon:
 |---|---|
 | `out/<name>.stl` | binary STL in millimetres, Z up, sitting on z = 0 in print orientation |
 | `out/<name>.json` | bounding box, volume, solid mass upper bound, triangle count, full printcheck result, parameter snapshot, STL sha256, printer profile and colour |
+| `out/variants.md`, `out/variants.json`, `out/variants/<name>/` | after `--variants`: the comparison table and each version's STLs |
 | `out/x2d-job.json` | X2D profile only: draft job for the x2d-print skill (see above) |
 | `out/manifest.json` | written once by `serve.py` at start-up: parts, colours, bed size for the viewer |
 | `fits.json` | your measured clearances (from the coupon) |
@@ -114,7 +116,7 @@ Calibration coupon:
 ## What it does NOT do
 
 - No printer control of any kind: no G-code, no calls to printer hosts or cloud print services, no starting prints.
-- No slicing. Supports, seams, infill and speeds are set in your slicer.
+- No slicing. The time and filament figures are estimates; your slicer gives the exact ones, and seams and speeds are set there.
 - No structural analysis (no FEA). Load advice is rules of thumb.
 - No font rendering: marks are notches and symbols; add text in the slicer if needed.
 - Not for safety-critical parts (see [references/safety.md](references/safety.md)).

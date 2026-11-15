@@ -8,18 +8,24 @@
 | Handedness | <left / right / symmetric>, stated in real-world terms |
 | Material | <PLA / PETG / TPU / ABS / ASA>, nozzle <range> C, bed <range> C |
 | Nozzle / layer height | <0.4> mm / <0.2> mm |
-| Walls / infill | <3 walls, 20 to 40 % infill> |
+| Version | <standard / light / strong>: <walls> walls, <infill> % infill (from `build.py --variants`) |
 | Supports | <none> (or: where and why) |
 | Brim | <none> (add one if the part is tall and narrow) |
 | Printer | <generic / Bambu Lab X2D> (profile `PRINTER`) |
 | Colour change | <none> (or: at Z = <h> mm, layer <h / layer height>; confirm in the slicer preview) |
 | Colours | <single> (or: one STL per colour: <suffix = colour>, dominant colour <name>) |
 | Quantity | <n> |
-| Mass estimate | up to <g> g at 100 % infill; the slicer gives the real value |
+| Estimate | about <g> g of filament (<m> m), <lo> to <hi> min including about 8 min of printer preparation; the slicer gives the exact figure |
+| Other versions | <light: g, min / strong: g, min> (out/variants.md) |
 | Fits used | <fits.json from the coupon / default clearances> |
 | Accepted printcheck warnings | <list, or "none"> |
 | After printing | <clean holes, install inserts, test fit before load> |
 | Next step | <your slicer> (or, on the X2D: x2d-print skill with `out/x2d-job.json`) |
+
+Words: **walls** = the outer shell lines, most of the strength; **infill** = the
+pattern inside (a percentage); **supports** = throw-away scaffolding under
+overhangs; **brim** = a thin ring around the first layer that helps tall narrow
+parts stay stuck; **purge** = filament thrown away at each colour change.
 
 Slicing and printing are your steps. Do not leave the printer unattended;
 ventilate for ABS/ASA; let parts cool before handling.

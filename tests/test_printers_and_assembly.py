@@ -56,12 +56,39 @@ class ProfileTests(unittest.TestCase):
 
     def test_suggest_nozzles(self):
         x2d = printers.get("bambu-x2d")
-        parts = [{"stl": "star.stl", "layers": 3, "volume_mm3": 600},
-                 {"stl": "base.stl", "layers": 20, "volume_mm3": 24000}]
-        self.assertEqual(printers.suggest_nozzles(x2d, parts, "PLA"),
-                         {"base.stl": "right", "star.stl": "left"})
-        self.assertEqual(set(printers.suggest_nozzles(x2d, parts, "TPU").values()), {"left"})
+        parts = [{"stl": "star.stl", "colour": "yellow", "layers": 3, "volume_mm3": 600},
+                 {"stl": "base.stl", "colour": "black", "layers": 20, "volume_mm3": 24000}]
+        self.assertEqual(printers.suggest_nozzles(x2d, parts, "PLA", mixed_layers=3),
+                         {"black": "right", "yellow": "left"})
+        self.assertEqual(set(printers.suggest_nozzles(x2d, parts, "TPU", mixed_layers=3).values()), {"left"})
         self.assertEqual(printers.suggest_nozzles(printers.get("generic"), parts, "PLA"), {})
+        # colours only change by height: everything on the left nozzle (x2d-print colour rule 2)
+        self.assertEqual(printers.suggest_nozzles(x2d, parts, "PLA", mixed_layers=0),
+                         {"black": "left", "yellow": "left"})
+
+    def test_one_colour_in_several_parts_stays_on_one_nozzle(self):
+        x2d = printers.get("bambu-x2d")
+        parts = [{"stl": "box.stl", "colour": "blue", "layers": 40, "volume_mm3": 9000},
+                 {"stl": "lid.stl", "colour": "blue", "layers": 10, "volume_mm3": 2000}]
+        self.assertEqual(printers.suggest_nozzles(x2d, parts, "PLA", mixed_layers=10), {"blue": "left"})
+
+    def test_keep_filled_only_when_parts_and_colours_match(self):
+        def job(colour="black"):
+            return {"template": "", "nozzles": {}, "objects": [{"name": "a", "parts": [
+                {"stl": "a-base.stl", "colour": colour, "filament": None}]}]}
+        old = job()
+        old["template"] = "/x/Cubo.3mf"
+        old["objects"][0]["parts"][0]["filament"] = 5
+        old["nozzles"] = {"5": "right"}
+        new = job()
+        notes = printers.keep_filled(new, old)
+        self.assertIn("kept", notes[0])
+        self.assertEqual((new["template"], new["objects"][0]["parts"][0]["filament"], new["nozzles"]),
+                         ("/x/Cubo.3mf", 5, {"5": "right"}))
+        changed = job("red")
+        self.assertIn("reset", printers.keep_filled(changed, old)[0])
+        self.assertIsNone(changed["objects"][0]["parts"][0]["filament"])
+        self.assertEqual(printers.keep_filled(job(), job()), [])
 
     def test_notes_mention_tpu_and_two_nozzle_reach(self):
         x2d = printers.get("bambu-x2d")
@@ -160,7 +187,22 @@ class BuildHandoffTests(unittest.TestCase):
         self.assertEqual(job["template"], "")
         self.assertEqual(job["objects"][0]["parts"][0]["stl"], "mounting-plate.stl")
         self.assertIsNone(job["objects"][0]["parts"][0]["filament"])
-        self.assertEqual(job["design"]["suggested_nozzles"], {"mounting-plate.stl": "left"})
+        self.assertEqual(job["design"]["suggested_nozzles"], {"blue": "left"})
+        self.assertEqual(job["design"]["format"], 2)
+        self.assertEqual(job["settings"]["wall_loops"], "3")
+        self.assertEqual(job["settings"]["sparse_infill_density"], "15%")
+        self.assertEqual(job["settings"]["layer_height"], "0.2")
+        self.assertGreater(job["design"]["estimate"]["grams"], 0)
+        self.assertIn("estimate (standard", res.stdout)
+        # x2d-print fills the job in place; a rebuild keeps what it filled
+        job["template"] = "/somewhere/Cubo.3mf"
+        job["objects"][0]["parts"][0]["filament"] = 2
+        (self.project / "out" / "x2d-job.json").write_text(json.dumps(job))
+        res = self.build(src)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        again = json.loads((self.project / "out" / "x2d-job.json").read_text())
+        self.assertEqual(again["template"], "/somewhere/Cubo.3mf")
+        self.assertEqual(again["objects"][0]["parts"][0]["filament"], 2)
         self.assertEqual(job["output"], "mounting-plate.3mf")
         meta = json.loads((self.project / "out" / "mounting-plate.json").read_text())
         self.assertEqual(meta["printer_bed"], [256.0, 256.0, 261.0])
@@ -186,8 +228,7 @@ class BuildHandoffTests(unittest.TestCase):
         for p in parts:
             self.assertTrue((out / p["stl"]).is_file())
             self.assertIsNone(p["filament"])
-        self.assertEqual(job["design"]["suggested_nozzles"],
-                         {"coaster-base.stl": "right", "coaster-star.stl": "left"})
+        self.assertEqual(job["design"]["suggested_nozzles"], {"black": "right", "yellow": "left"})
         self.assertEqual(job["design"]["colour_layers"]["mixed_layers"], 3)
         meta = json.loads((out / "coaster-star.json").read_text())
         self.assertTrue(meta["assembly"])
@@ -200,6 +241,93 @@ class BuildHandoffTests(unittest.TestCase):
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
         self.assertIn("overlap", res.stdout)
         self.assertFalse((self.project / "out").exists())
+
+
+    def test_variants_compare_and_reach_the_handoff(self):
+        src = (ROOT / "templates" / "build.py").read_text().replace(
+            'PRINTER = "generic" ', 'PRINTER = "bambu-x2d" ').replace(
+            "PLATE_T = 4.0 ", "PLATE_T = cad.vary(4.0, light=3.0) ")
+        (self.project / "build.py").write_text(src)
+        res = subprocess.run([sys.executable, "-P", "build.py", "--thin-walls", "0", "--variants"], cwd=self.project,
+                             env=self.env, capture_output=True, text=True, timeout=300)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("| light |", res.stdout)
+        out = self.project / "out"
+        self.assertTrue((out / "variants.md").is_file())
+        versions = json.loads((out / "variants.json").read_text())["versions"]
+        self.assertEqual([v["name"] for v in versions], ["standard", "light", "strong"])
+        grams = {v["name"]: v["estimate"]["grams"] for v in versions}
+        self.assertLess(grams["light"], grams["standard"])
+        self.assertLess(grams["standard"], grams["strong"])
+        job = json.loads((out / "x2d-job.json").read_text())
+        by = {v["name"]: v for v in job["variants"]}
+        self.assertEqual(by["light"]["settings"]["wall_loops"], "2")
+        self.assertEqual(by["strong"]["settings"]["sparse_infill_density"], "40%")
+        # the light plate is thinner: its STL differs and is listed; strong has the same geometry
+        self.assertEqual(by["light"]["stl"], {"mounting-plate.stl": "variants/light/mounting-plate.stl"})
+        self.assertTrue((out / "variants" / "light" / "mounting-plate.stl").is_file())
+        self.assertNotIn("stl", by["strong"])
+
+    def test_unknown_variant_and_unlisted_vary_name_refused(self):
+        src = (ROOT / "templates" / "build.py").read_text()
+        (self.project / "build.py").write_text(src)
+        res = subprocess.run([sys.executable, "-P", "build.py", "--check", "--variant", "huge"], cwd=self.project,
+                             env=self.env, capture_output=True, text=True, timeout=300)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("unknown version", res.stderr)
+        res = self.build(src.replace("PLATE_T = 4.0 ", "PLATE_T = cad.vary(4.0, tiny=3.0) "))
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("VARIANTS does not list", res.stderr)
+
+    def test_assembly_needs_one_colour_per_part(self):
+        src = (ROOT / "examples" / "two-colour-coaster" / "build.py").read_text().replace(
+            'COLOUR_NAME = {"base": "black", "star": "yellow"}', 'COLOUR_NAME = "black"')
+        res = self.build(src)
+        self.assertEqual(res.returncode, 2, res.stdout + res.stderr)
+        self.assertIn("its own colour", res.stderr)
+
+
+class EstimateTests(unittest.TestCase):
+    """Numbers checked against real Bambu Studio 02.09 slices on the X2D (scripts/estimate.py)."""
+
+    def est(self, mesh, walls=2, infill=15, colour="a", **kw):
+        import estimate
+        mv = estimate.material_volume(mesh, layer=LAYER, nozzle=0.4, walls=walls, infill=infill,
+                                      top_layers=5, bottom_layers=3)
+        mv["colour"] = colour
+        return mv
+
+    def test_cube_matches_the_slicer(self):
+        import estimate
+        cube = cad.to_trimesh(cad.translate(cad.box(40, 40, 40), z=0))
+        e = estimate.estimate([self.est(cube)], profile="bambu-x2d", material="PLA", layer=LAYER)
+        lo, hi = e["grams_range"]
+        self.assertTrue(lo <= 19.8 <= hi, e)           # Bambu Studio: 19.8 g, 39m41s
+        lo, hi = e["minutes_range"]
+        self.assertTrue(lo <= 39.7 <= hi, e)
+
+    def test_colour_swaps_cost_more_than_nozzle_switches(self):
+        import estimate
+        a = cad.to_trimesh(cad.translate(cad.box(30, 40, 10), x=-5))
+        b = cad.to_trimesh(cad.translate(cad.box(10, 40, 10), x=15))
+        parts = [self.est(a, colour="a"), self.est(b, colour="b")]
+        one = estimate.estimate(parts, profile="bambu-x2d", material="PLA", layer=LAYER,
+                                nozzle_of={"a": "left", "b": "left"})
+        two = estimate.estimate(parts, profile="bambu-x2d", material="PLA", layer=LAYER,
+                                nozzle_of={"a": "left", "b": "right"})
+        self.assertEqual(one["swaps"], 50)
+        self.assertEqual(two["swaps"], 0)
+        self.assertTrue(one["minutes_range"][0] <= 124 <= one["minutes_range"][1], one)   # slicer 2h 3m
+        self.assertTrue(two["minutes_range"][0] <= 42 <= two["minutes_range"][1], two)     # slicer 42m
+        self.assertGreater(one["purge_g"], 30)
+        self.assertIn("swap", estimate.describe(one, "standard", "PLA"))
+
+    def test_generic_profile_says_rough(self):
+        import estimate
+        cube = cad.to_trimesh(cad.box(20, 20, 20))
+        e = estimate.estimate([self.est(cube)], profile="generic", material="PETG", layer=LAYER, quantity=3)
+        self.assertEqual(e["quantity"], 3)
+        self.assertIn("rough", estimate.describe(e, "standard", "PETG"))
 
 
 class ViewerManifestTests(unittest.TestCase):

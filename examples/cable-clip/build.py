@@ -58,6 +58,7 @@ def _skill_scripts() -> Path:
 sys.path.insert(0, str(_skill_scripts()))
 import assembly  # noqa: E402
 import cad  # noqa: E402
+import harness  # noqa: E402
 import printcheck  # noqa: E402
 import printers  # noqa: E402
 from safeio import safe_text  # noqa: E402
@@ -73,9 +74,24 @@ COLOR = "#2bb673"                # preview colour in the viewer only
 PRINTER_BED = (220, 220, 250)    # X, Y, Z build volume of the target printer (intake)
 NOZZLE = 0.4                     # nozzle diameter; minimum wall = 2 x NOZZLE
 LAYER = 0.2                      # layer height; flat feature heights are multiples of it
-OVERHANG_LIMIT = 45              # degrees from vertical this printer manages without support
+OVERHANG_LIMIT = FITS.get("overhang_ok_deg", 45)  # degrees from vertical without support (coupon, else 45)
 SUPPORTS_ALLOWED = False         # the clip must print with no supports at all
 EXPECTED_BODIES = 1              # one solid part
+QUANTITY = 1                     # copies to print (multiplies filament and time in the estimate)
+FIRST_PRINT = True               # from intake: True if the person has never printed (x2d-print gives the full guide)
+
+# Versions to compare before printing (filament and time). The base is "standard";
+# vary(standard, name=value) sets a parameter per version. Geometry can vary too,
+# e.g. PLATE_T = cad.vary(4.0, light=3.0). Compare with: build.py --variants
+VARIANTS = {                     # name: what changes, in words the person understands
+    "light": "2 walls, 10% infill: fastest, least filament; for looks or light use",
+    "strong": "4 walls, 40% infill: slower, more filament; for loads, screws and clips",
+}
+STANDARD_ABOUT = "3 walls, 15% infill: the everyday choice for a functional part"
+WALLS = cad.vary(3, light=2, strong=4)        # wall loops: the outer shell gives most of the strength
+INFILL = cad.vary(15, light=10, strong=40)    # infill %: the pattern inside; more = heavier and slower
+TOP_LAYERS = 5                   # solid layers on top (Bambu 0.20mm Standard)
+BOTTOM_LAYERS = 3                # solid layers at the bottom (Bambu 0.20mm Standard)
 
 CABLE_D = 7.0                    # cable bundle diameter measured with calipers (2 cables)
 CABLE_CLEAR = 0.5                # radial room so the bundle is held, not pinched
@@ -135,107 +151,9 @@ def build_part():
 
 
 # ============ HARNESS: DO NOT EDIT BELOW THIS LINE ============
-def _per_part(value, suffix):
-    return value.get(suffix, value.get("", None)) if isinstance(value, dict) else value
-
-
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=f"Build {NAME} and check it before export.")
-    ap.add_argument("--out", default="out", help="output folder inside the project folder (default out)")
-    ap.add_argument("--check", action="store_true", help="run printcheck only, write nothing")
-    ap.add_argument("--thin-walls", type=int, default=400, metavar="N",
-                    help="surface samples for the thin wall check (0 to skip)")
-    args = ap.parse_args(argv)
-    g = globals()
-    try:
-        name = cad.validate_name(g["NAME"])
-        out_dir = cad.safe_out_dir(PROJECT_DIR, args.out)
-        profile = printers.get(g.get("PRINTER"))
-    except ValueError as exc:
-        print(f"refusing: {safe_text(exc)}", file=sys.stderr)
-        return 2
-
-    parts = build_part()
-    if not isinstance(parts, dict):
-        parts = {"": parts}
-    together = bool(g.get("ASSEMBLY", False)) and len(parts) > 1
-    colours = {sfx: str(_per_part(g.get("COLOUR_NAME"), sfx) or "") for sfx in parts}
-    n_colours = len(set(colours.values())) if len(parts) > 1 else 1
-    try:
-        bed = printers.bed_for(profile, n_colours, g.get("PRINTER_BED"))
-    except ValueError as exc:
-        print(f"refusing: {safe_text(exc)}", file=sys.stderr)
-        return 2
-    results = []
-    for suffix, solid in parts.items():
-        try:
-            part_name = name if not suffix else cad.validate_name(f"{name}-{suffix}")
-        except ValueError as exc:
-            print(f"refusing: {safe_text(exc)}", file=sys.stderr)
-            return 2
-        mesh = cad.to_trimesh(solid)
-        res = printcheck.check_printable(
-            mesh, bed=bed, layer=g["LAYER"], nozzle=g["NOZZLE"],
-            overhang_deg=g["OVERHANG_LIMIT"], supports=g["SUPPORTS_ALLOWED"],
-            expected_bodies=_per_part(g["EXPECTED_BODIES"], suffix),
-            thin_wall_samples=args.thin_walls,
-            probes_inside=_per_part(g.get("PROBES_INSIDE", ()), suffix) or (),
-            probes_outside=_per_part(g.get("PROBES_OUTSIDE", ()), suffix) or (),
-            standalone=not together,
-        )
-        print(res.summary(part_name))
-        results.append((part_name, suffix, mesh, res))
-
-    joined = None
-    if together:
-        joined = assembly.check_assembly(
-            parts, bed=bed, layer=g["LAYER"], nozzle=g["NOZZLE"], overhang_deg=g["OVERHANG_LIMIT"],
-            supports=g["SUPPORTS_ALLOWED"], expected_bodies=g.get("ASSEMBLY_BODIES", 1),
-            nozzles=profile["nozzles"])
-        print(joined.summary(f"{name} (all {len(parts)} colour parts joined)"))
-    two_nozzle_bed = not g.get("PRINTER_BED") and n_colours >= 2 and bool(profile.get("bed_two_nozzles"))
-    notes = printers.notes(profile, g["MATERIAL"], n_colours, two_nozzle_bed)
-    for note in notes:
-        print(f"note ({profile['label']}): {note}")
-
-    failed = [r[0] for r in results if not r[3].ok] + ([name + " (joined)"] if joined and not joined.ok else [])
-    if failed:
-        print(f"\nprintcheck failed for {', '.join(failed)}: nothing written. "
-              "Fix the parameters or the geometry and run again.", file=sys.stderr)
-        return 1
-    if args.check:
-        print("\ncheck only: nothing written")
-        return 0
-    params = cad.param_snapshot(g)
-    params["FITS"] = FITS
-    extra = {"printer": profile["name"], "assembly": together, "printer_notes": notes}
-    if joined is not None:
-        extra["assembly_check"] = joined.to_dict()
-    handoff = []
-    for part_name, suffix, mesh, res in results:
-        hex_colour = _per_part(g.get("COLOR"), suffix)
-        try:
-            stl, meta = cad.write_part(out_dir, part_name, mesh, res, material=g["MATERIAL"], params=params,
-                                       color=hex_colour, bed=bed, extra=dict(extra, colour=colours[suffix]))
-        except (ValueError, OSError) as exc:
-            print(f"refusing: {safe_text(exc)}", file=sys.stderr)
-            return 2
-        print(f"wrote {stl.relative_to(PROJECT_DIR)} and {meta.relative_to(PROJECT_DIR)}")
-        z0, z1 = float(mesh.bounds[0][2]), float(mesh.bounds[1][2])
-        handoff.append({"stl": stl.name, "colour": colours[suffix], "colour_hex": hex_colour, "z": (z0, z1),
-                        "layers": int(round((z1 - z0) / g["LAYER"])), "volume_mm3": float(mesh.volume)})
-    if profile.get("handoff"):
-        job = printers.x2d_job(name, handoff, assembly=together, material=g["MATERIAL"], layer=g["LAYER"],
-                               nozzle=g["NOZZLE"], supports=g["SUPPORTS_ALLOWED"], profile=profile,
-                               printer_notes=notes)
-        try:
-            path = printers.write_handoff(out_dir, job, profile["handoff_file"])
-        except (ValueError, OSError) as exc:
-            print(f"refusing: {safe_text(exc)}", file=sys.stderr)
-            return 2
-        print(f"wrote {path.relative_to(PROJECT_DIR)}: draft job for the {profile['handoff']} skill "
-              "(template and filament numbers are filled there)")
-    return 0
+    """Name check, printcheck, estimate, export and hand-off: the skill's scripts/harness.py."""
+    return harness.run(globals(), argv, Path(__file__))
 
 
 if __name__ == "__main__":

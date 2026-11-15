@@ -28,7 +28,9 @@ checks them again against the person's Bambu Studio when it builds the project.
   the full width may need its own plate.
 - **Two nozzles.** Left: direct drive, fed by the AMS (up to 4 colours per AMS). Right:
   Bowden, fed by the external spool, **no TPU**. Switching nozzle wastes almost nothing;
-  changing colour on the same nozzle purges about 0.35 to 0.5 g each time.
+  changing colour on the same nozzle costs about 2 minutes and 0.75 g of purge each time
+  (measured: a 40 x 40 x 10 mm block takes 17 min in one colour, 42 min with a second colour
+  on the other nozzle, 2 h 04 min and 43.5 g with both colours on one nozzle).
 - **Defaults:** 0.4 mm nozzle, 0.20 mm layers (process "0.20mm Standard @BBL X2D"),
   Textured PEI Plate (the bottom face takes its texture; the Cool Plate is not supported).
 - **One material per print.** PLA with PETG bonds poorly. All colours of one build use
@@ -41,9 +43,12 @@ checks them again against the person's Bambu Studio when it builds the project.
    (on the bed, overhangs, build volume) and must touch without overlapping. Cut each
    accent out of the base with the same outline (`cad.difference(base, accent)`), as in
    `examples/two-colour-coaster`.
-2. **Dominant colour on its own nozzle.** Two colours on the X2D cost almost no purge:
-   one per nozzle. The hand-off suggests the colour that spans the most layers for the
-   right nozzle (external spool), the accents for the left (AMS).
+2. **Dominant colour on its own nozzle, when colours share layers.** Two colours on the
+   X2D cost almost no purge: one per nozzle. When some layers hold two colours, the
+   hand-off suggests the colour that spans the most layers for the right nozzle (external
+   spool), the accents for the left (AMS). When colours only change by height (no layer
+   holds two colours) everything stays on the left nozzle: one change per boundary, and
+   nothing to load on the external holder. One colour: left nozzle only.
 3. **Accents in few layers.** Inlays on top (flush, 3 layers deep) or face down in the
    first 3 to 5 layers. With three or more colours, every layer that holds more colours
    than there are nozzles costs a purge: the `colour_layers` check counts them and warns
@@ -67,10 +72,19 @@ x2d-print job format, with an extra `design` block:
 - `template` and each `filament` are **left empty on purpose**: they come from the Bambu
   Studio template that the person saves in x2d-print (step 3), because only that file
   knows which colour is in which AMS slot. x2d-print refuses the job until they are set.
-- `settings`: `enable_support` when supports are allowed, otherwise empty.
-- `design`: printer, material, layer and nozzle, each part's height range and layer
-  count, how many layers mix colours, the suggested nozzle per STL, the notes printed by
-  the build, and a `todo` list for x2d-print.
+- `settings`: the print settings of the chosen version as Bambu Studio strings
+  (`layer_height`, `wall_loops`, `sparse_infill_density`, `top_shell_layers`,
+  `bottom_shell_layers`, `enable_support`), so the .3mf prints what was estimated.
+- `variants` (after `build.py --variants`): the other versions, each with `name`, `about`,
+  `settings`, `estimate` and, when its geometry differs, `stl` (replacement STLs under
+  `variants/<name>/`). x2d-print can slice them all and show the real numbers side by side.
+- `design` (format 2): printer, material, layer and nozzle, the chosen `variant`,
+  `quantity`, `first_print`, each part's height range and layer count, how many layers mix
+  colours, `suggested_nozzles` **keyed by colour name**, the pre-slice `estimate` (grams,
+  metres, minutes), the notes printed by the build, and a `todo` list for x2d-print.
+- **A rebuild keeps what x2d-print filled in** (template path, filament numbers, nozzles)
+  as long as every STL keeps its name and colour; if colours change they are reset and
+  the build says so.
 
 The person (or Claude in the next skill) opens the x2d-print skill in the same `out/`
 folder: the STLs and the draft job are already side by side, and x2d-print writes the
