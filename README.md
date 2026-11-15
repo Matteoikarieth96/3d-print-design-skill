@@ -8,7 +8,7 @@ hands you the STL with a short print sheet. For the Bambu Lab X2D it also
 writes a draft job for the [x2d-print](https://github.com/Matteoikarieth96/x2d-print-skill)
 skill, so the design goes straight into a ready Bambu Studio project.
 
-First print from zero? The [Urbe X2D starter kit](https://github.com/Matteoikarieth96/urbe-x2d-starter-kit) installs this skill and x2d-print together.
+First print from zero? The [Urbe X2D starter kit](https://github.com/urbe-hub/urbe-x2d-starter-kit) installs this skill and x2d-print together.
 
 **It never talks to your printer.** No G-code, no network calls to printers,
 no starting prints. You slice and print with your own slicer.
@@ -58,7 +58,7 @@ Defaults when skipped are in [references/intake.md](references/intake.md).
 
 ## Install
 
-Using the [urbe-x2d-starter-kit](https://github.com/Matteoikarieth96/urbe-x2d-starter-kit)? Its `./install.sh` already installs this skill and x2d-print: skip this section.
+Using the [urbe-x2d-starter-kit](https://github.com/urbe-hub/urbe-x2d-starter-kit)? Its `./install.sh` already installs this skill and x2d-print: skip this section.
 
 ```
 git clone https://github.com/Matteoikarieth96/3d-print-design-skill ~/.claude/skills/3d-print-design
@@ -163,12 +163,12 @@ vendored. Details: [SECURITY.md](SECURITY.md).
 
 ## For maintainers
 
-The [urbe-x2d-starter-kit](https://github.com/Matteoikarieth96/urbe-x2d-starter-kit)
+The [urbe-x2d-starter-kit](https://github.com/urbe-hub/urbe-x2d-starter-kit)
 carries a copy of this skill. After merging a change to `main`, run the kit's sync so the
 copy follows (GitHub turns its nightly run off after 60 days without activity):
 
 ```bash
-gh workflow run sync.yml -R Matteoikarieth96/urbe-x2d-starter-kit
+gh workflow run sync.yml -R urbe-hub/urbe-x2d-starter-kit
 ```
 
 ## More skills
