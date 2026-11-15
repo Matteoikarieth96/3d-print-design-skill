@@ -180,3 +180,24 @@ class EstimateScopeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LayerHeightTests(unittest.TestCase):
+    """Two real Bambu Studio 02.09.01.70 slices at 0.28 mm (estimate-calibration.md)."""
+
+    def minutes(self, mesh, layer):
+        mv = estimate.material_volume(mesh, layer=layer, nozzle=0.4, walls=3, infill=15,
+                                      top_layers=5, bottom_layers=3)
+        mv["colour"] = "a"
+        return estimate.estimate([mv], profile="bambu-x2d", material="PLA", layer=layer)["minutes_exact"]
+
+    def test_thicker_layers_help_tall_parts_not_flat_ones(self):
+        import trimesh
+        tall = trimesh.creation.cylinder(radius=20, height=80, sections=96)
+        tall.apply_translation([0, 0, 40])
+        flat = _box(100, 100, 4)
+        self.assertLess(self.minutes(tall, 0.28), self.minutes(tall, 0.2) * 0.85)   # real: -24 %
+        self.assertGreater(self.minutes(flat, 0.28), self.minutes(flat, 0.2))       # real coaster: +10 %
+        # the 80 mm cylinder sliced in 50.65 min at 0.28 mm
+        self.assertLess(abs(self.minutes(tall, 0.28) - 50.65) / 50.65, 0.10)
+

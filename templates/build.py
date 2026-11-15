@@ -76,7 +76,7 @@ COLOUR_NAME = "blue"             # filament colour in words, or {suffix: name}; 
 PRINTER = "generic"              # printer profile (scripts/printers.py): "generic" or "bambu-x2d"
 PRINTER_BED = None               # None = the profile's build volume; (X, Y, Z) to override it
 NOZZLE = 0.4                     # nozzle diameter; minimum wall = 2 x NOZZLE
-LAYER = 0.2                      # layer height; flat feature heights are multiples of it
+LAYER = cad.vary(0.2, fast=0.28)  # layer height; flat feature heights are multiples of it
 OVERHANG_LIMIT = FITS.get("overhang_ok_deg", 45)  # degrees from vertical without support (coupon, else 45)
 SUPPORTS_ALLOWED = False         # from intake; False turns overhang warnings into errors
 EXPECTED_BODIES = 1              # one solid; a second body means a loose piece
@@ -91,6 +91,7 @@ FIRST_PRINT = True               # from intake: True if the person has never pri
 VARIANTS = {                     # name: what changes, in words the person understands
     "light": "2 walls, 10% infill: fastest, least filament; for looks or light use",
     "strong": "4 walls, 40% infill: slower, more filament; for loads, screws and clips",
+    "fast": "0.28 mm layers: quickest, visible layer lines; time estimate is rough (not measured)",
 }
 STANDARD_ABOUT = "3 walls, 15% infill: the everyday choice for a functional part"
 WALLS = cad.vary(3, light=2, strong=4)        # wall loops: the outer shell gives most of the strength

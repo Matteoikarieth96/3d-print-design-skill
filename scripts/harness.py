@@ -38,6 +38,7 @@ def _refuse(msg) -> int:
 def _settings(g: dict) -> dict:
     """Print settings that drive time and material (defaults = Bambu 0.20mm Standard)."""
     return {
+        "layer": float(g["LAYER"]),
         "walls": int(g.get("WALLS", 2)),
         "infill": float(g.get("INFILL", 15)),
         "top_layers": int(g.get("TOP_LAYERS", 5)),
@@ -213,9 +214,10 @@ def _build_one(g, args, name, out_dir, profile, project_dir, variants):
         plans = [{"option": "chosen", "label": "the chosen version's nozzles",
                   "nozzles": {c: forced[c] for c in set(colours.values())}}]
 
-    def run_estimate(nozzle_of):
+    def run_estimate(nozzle_of, quantity=None):
         return est.estimate(vols, profile=profile["name"], material=g["MATERIAL"], layer=g["LAYER"],
-                            quantity=int(g.get("QUANTITY", 1)), nozzle_of=nozzle_of,
+                            quantity=int(g.get("QUANTITY", 1)) if quantity is None else quantity,
+                            nozzle_of=nozzle_of,
                             supports=bool(g["SUPPORTS_ALLOWED"]), nozzle=g["NOZZLE"])
 
     options = []
@@ -232,6 +234,9 @@ def _build_one(g, args, name, out_dir, profile, project_dir, variants):
     else:
         nozzle_of = {}
         e = run_estimate({})
+    if int(g.get("QUANTITY", 1)) > 1:   # for x2d-print when only one copy fits on the plate
+        one = run_estimate(nozzle_of, quantity=1)
+        e["one_copy"] = {k: one[k] for k in ("grams", "model_g", "metres", "minutes", "minutes_range")}
     label = f"{args.variant}, {st['walls']} walls, {st['infill']:g}% infill, {g['LAYER']:g} mm layers"
     print(est.describe(e, label, g["MATERIAL"]))
     if len(options) > 1:
@@ -293,7 +298,8 @@ def _handoff(g, args, name, out_dir, profile, project_dir, built, rows) -> int:
                 pass
         vs = vs or st
         entry = {"name": r["name"], "about": r["about"],
-                 "settings": printers.slicer_settings(walls=vs["walls"], infill=vs["infill"], layer=g["LAYER"],
+                 "settings": printers.slicer_settings(walls=vs["walls"], infill=vs["infill"],
+                                                      layer=vs.get("layer", g["LAYER"]),
                                                       top_layers=vs["top_layers"], bottom_layers=vs["bottom_layers"],
                                                       supports=g["SUPPORTS_ALLOWED"]),
                  "estimate": {k: r["estimate"][k] for k in ("grams", "metres", "minutes", "minutes_range",
@@ -308,7 +314,8 @@ def _handoff(g, args, name, out_dir, profile, project_dir, built, rows) -> int:
                            layer=g["LAYER"], nozzle=g["NOZZLE"], supports=g["SUPPORTS_ALLOWED"], profile=profile,
                            printer_notes=built["notes"], settings=settings,
                            estimate={k: e[k] for k in ("grams", "metres", "minutes", "minutes_range", "purge_g",
-                                                       "in_calibration", "outside_because")},
+                                                       "in_calibration", "outside_because", "one_copy")
+                                     if k in e},
                            variants=job_variants, variant=args.variant, quantity=int(g.get("QUANTITY", 1)),
                            first_print=g.get("FIRST_PRINT"), suggested_nozzles=built["nozzles"],
                            nozzle_options=built["nozzle_options"] or None, external_spool=built["external_spool"])

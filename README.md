@@ -58,6 +58,8 @@ Defaults when skipped are in [references/intake.md](references/intake.md).
 
 ## Install
 
+Using the [urbe-x2d-starter-kit](https://github.com/Matteoikarieth96/urbe-x2d-starter-kit)? Its `./install.sh` already installs this skill and x2d-print: skip this section.
+
 ```
 git clone https://github.com/Matteoikarieth96/3d-print-design-skill ~/.claude/skills/3d-print-design
 cd ~/.claude/skills/3d-print-design
@@ -158,6 +160,16 @@ vendored. Details: [SECURITY.md](SECURITY.md).
 - Helpers cover common shapes (plates, profiles, holes, countersinks,
   counterbores, inserts, teardrops, chamfers). Fillets, threads and organic
   shapes need your own code in the geometry block.
+
+## For maintainers
+
+The [urbe-x2d-starter-kit](https://github.com/Matteoikarieth96/urbe-x2d-starter-kit)
+carries a copy of this skill. After merging a change to `main`, run the kit's sync so the
+copy follows (GitHub turns its nightly run off after 60 days without activity):
+
+```bash
+gh workflow run sync.yml -R Matteoikarieth96/urbe-x2d-starter-kit
+```
 
 ## More skills
 

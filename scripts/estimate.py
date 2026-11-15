@@ -161,11 +161,12 @@ def material_volume(mesh, *, layer: float, nozzle: float, walls: int, infill: fl
     line = 1.125 * nozzle                       # slicer default line width (0.45 for 0.4)
     volume = float(abs(mesh.volume))
     shell = min(volume, up * top_layers * layer + down * bottom_layers * layer + side * walls * line)
+    wall = min(shell, side * walls * line)      # the walls' share of the shell
     core = max(volume - shell, 0.0) * max(0.0, min(infill, 100.0)) / 100.0
     lo, hi = mesh.bounds
     return {"volume_mm3": volume, "shell_mm3": shell, "core_mm3": core,
             "z": (float(lo[2]), float(hi[2])), "layer_area": layer_areas(mesh, layer).tolist(),
-            "infill": float(infill), "nozzle": float(nozzle), "walls": int(walls),
+            "wall_mm3": wall, "infill": float(infill), "nozzle": float(nozzle), "walls": int(walls),
             "top_layers": int(top_layers), "bottom_layers": int(bottom_layers)}
 
 
@@ -249,8 +250,13 @@ def print_seconds(parts: Sequence[dict], *, profile: str, layer: float, quantity
     n = int(round(top / layer)) if layer > 0 else 0
     per = np.zeros(n)       # seconds of extrusion per layer
     vol = np.zeros(n)       # mm3 extruded per layer
+    # Thicker layers print walls and sparse infill at about the same mm/s, so faster per mm3;
+    # top and bottom solid layers do not speed up (2 slices at 0.28 mm, estimate-calibration.md)
+    f = CALIBRATED["layer"] / layer if layer > 0 else 1.0
     for p in parts:
-        t = p["shell_mm3"] * sp["shell_s_mm3"] + p["core_mm3"] * sp["core_s_mm3"]
+        wall = min(p.get("wall_mm3", 0.0), p["shell_mm3"])
+        t = ((p["shell_mm3"] - wall) * sp["shell_s_mm3"] + wall * sp["shell_s_mm3"] * f
+             + p["core_mm3"] * sp["core_s_mm3"] * f)
         v = p["shell_mm3"] + p["core_mm3"]
         area = np.asarray(p.get("layer_area") or [], dtype=float)[:n]
         if area.size and area.sum() > 0:
