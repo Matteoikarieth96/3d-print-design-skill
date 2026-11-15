@@ -77,6 +77,7 @@ LAYER = 0.2                      # layer height; flat feature heights are multip
 OVERHANG_LIMIT = FITS.get("overhang_ok_deg", 45)  # degrees from vertical without support (coupon, else 45)
 SUPPORTS_ALLOWED = False         # the clip must print with no supports at all
 EXPECTED_BODIES = 1              # one solid part
+EXTERNAL_SPOOL = True            # X2D, from intake: can a spool go on the external holder (right nozzle)? False = AMS only, all on the left
 QUANTITY = 1                     # copies to print (multiplies filament and time in the estimate)
 FIRST_PRINT = True               # from intake: True if the person has never printed (x2d-print gives the full guide)
 

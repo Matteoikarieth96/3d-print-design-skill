@@ -13,10 +13,10 @@
 | Brim | <none> (add one if the part is tall and narrow) |
 | Printer | <generic / Bambu Lab X2D> (profile `PRINTER`) |
 | Colour change | <none> (or: at Z = <h> mm, layer <h / layer height>; confirm in the slicer preview) |
-| Colours | <single> (or: one STL per colour: <suffix = colour>, dominant colour <name>) |
+| Colours | <single> (or: one STL per colour: <suffix = colour>; on the X2D the nozzle plan chosen and the other one: "other nozzle: ~X min, Y g") |
 | Quantity | <n> |
-| Estimate | about <g> g of filament (<m> m), <lo> to <hi> min including about 8 min of printer preparation; the slicer gives the exact figure |
-| Other versions | <light: g, min / strong: g, min> (out/variants.md) |
+| Estimate | about <g> g of filament (<m> m), about <min> min (<lo> to <hi> min) including about 6 min of printer preparation; the slicer gives a closer figure. Outside the measured range (not X2D + PLA + 0.4 nozzle + 0.2 layers, supports, or infill above 40 %) add: **rough: outside the measured range, trust the slicer** |
+| Other versions | <light: g, min / strong: g, min, and the difference vs standard> (out/variants.md) |
 | Fits used | <fits.json from the coupon / default clearances> |
 | Accepted printcheck warnings | <list, or "none"> |
 | After printing | <clean holes, install inserts, test fit before load> |

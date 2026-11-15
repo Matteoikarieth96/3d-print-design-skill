@@ -79,6 +79,7 @@ SUPPORTS_ALLOWED = False         # flat part, nothing to support
 EXPECTED_BODIES = 1              # each colour part is one solid
 ASSEMBLY = True                  # base and star are the two colours of ONE coaster, printed in place
 ASSEMBLY_BODIES = 1              # joined, they make one solid coaster
+EXTERNAL_SPOOL = True            # X2D, from intake: can a spool go on the external holder (right nozzle)? False = AMS only, all on the left
 QUANTITY = 1                     # copies to print (multiplies filament and time in the estimate)
 FIRST_PRINT = True               # from intake: True if the person has never printed (x2d-print gives the full guide)
 

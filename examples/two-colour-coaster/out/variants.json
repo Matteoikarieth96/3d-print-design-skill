@@ -1,0 +1,104 @@
+{
+  "chosen": "standard",
+  "versions": [
+    {
+      "name": "standard",
+      "about": "3 walls, 15% infill: the everyday choice for a functional part",
+      "ok": true,
+      "dir": ".",
+      "estimate": {
+        "measured_profile": true,
+        "in_calibration": true,
+        "outside_because": [],
+        "quantity": 1,
+        "layers": 20,
+        "model_g": 17.6,
+        "purge_g": 2.2,
+        "grams": 19.8,
+        "grams_range": [
+          16.8,
+          21.8
+        ],
+        "metres": 6.64,
+        "minutes": 36,
+        "minutes_exact": 35.89,
+        "minutes_range": [
+          30,
+          55
+        ],
+        "prep_min": 6,
+        "colour_min": 6,
+        "swaps": 3,
+        "nozzle_switches": 0,
+        "other_nozzles": {
+          "option": "dominant_right",
+          "label": "black on the right nozzle (external spool)",
+          "minutes": 41,
+          "grams": 18.7
+        }
+      }
+    },
+    {
+      "name": "light",
+      "about": "2 walls, 10% infill: fastest, least filament; for looks or light use",
+      "ok": true,
+      "dir": "variants/light",
+      "estimate": {
+        "measured_profile": true,
+        "in_calibration": true,
+        "outside_because": [],
+        "quantity": 1,
+        "layers": 20,
+        "model_g": 16.3,
+        "purge_g": 2.2,
+        "grams": 18.5,
+        "grams_range": [
+          15.7,
+          20.3
+        ],
+        "metres": 6.2,
+        "minutes": 34,
+        "minutes_exact": 34.33,
+        "minutes_range": [
+          25,
+          55
+        ],
+        "prep_min": 6,
+        "colour_min": 6,
+        "swaps": 3,
+        "nozzle_switches": 0
+      }
+    },
+    {
+      "name": "strong",
+      "about": "4 walls, 40% infill: slower, more filament; for loads, screws and clips",
+      "ok": true,
+      "dir": "variants/strong",
+      "estimate": {
+        "measured_profile": true,
+        "in_calibration": true,
+        "outside_because": [],
+        "quantity": 1,
+        "layers": 20,
+        "model_g": 22.0,
+        "purge_g": 2.2,
+        "grams": 24.2,
+        "grams_range": [
+          20.6,
+          26.6
+        ],
+        "metres": 8.11,
+        "minutes": 41,
+        "minutes_exact": 40.91,
+        "minutes_range": [
+          30,
+          65
+        ],
+        "prep_min": 6,
+        "colour_min": 6,
+        "swaps": 3,
+        "nozzle_switches": 0
+      }
+    }
+  ]
+}

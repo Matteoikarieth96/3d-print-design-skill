@@ -1,7 +1,7 @@
 {
   "name": "coaster-star",
   "units": "mm",
-  "generated_utc": "2026-11-15T09:21:22+00:00",
+  "generated_utc": "2026-11-15T10:12:53+00:00",
   "generator": "3d-print-design build script",
   "stl": "coaster-star.stl",
   "stl_sha256": "e53ff41eed96bd624c10e91d71a84dbf07955d13d73ec7d4e83914f244386841",
@@ -189,6 +189,7 @@
     "EXPECTED_BODIES": 1,
     "ASSEMBLY": true,
     "ASSEMBLY_BODIES": 1,
+    "EXTERNAL_SPOOL": true,
     "QUANTITY": 1,
     "FIRST_PRINT": true,
     "VARIANTS": {
@@ -255,25 +256,34 @@
   },
   "estimate": {
     "measured_profile": true,
+    "in_calibration": true,
+    "outside_because": [],
     "quantity": 1,
     "layers": 20,
     "model_g": 17.6,
-    "purge_g": 1.1,
-    "grams": 18.7,
+    "purge_g": 2.2,
+    "grams": 19.8,
     "grams_range": [
       16.8,
-      20.6
+      21.8
     ],
-    "metres": 6.27,
-    "minutes": 39,
+    "metres": 6.64,
+    "minutes": 36,
+    "minutes_exact": 35.89,
     "minutes_range": [
       30,
-      50
+      55
     ],
-    "prep_min": 8,
-    "colour_min": 9,
-    "swaps": 0,
-    "nozzle_switches": 3
+    "prep_min": 6,
+    "colour_min": 6,
+    "swaps": 3,
+    "nozzle_switches": 0,
+    "other_nozzles": {
+      "option": "dominant_right",
+      "label": "black on the right nozzle (external spool)",
+      "minutes": 41,
+      "grams": 18.7
+    }
   },
   "assembly_check": {
     "ok": true,

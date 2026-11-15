@@ -101,8 +101,11 @@ def _layers(z0: float, z1: float, layer: float) -> int:
 def colour_layers(parts: Sequence[dict], layer: float) -> dict:
     """How many layers hold 2 or more colours, by each part's height range.
 
-    parts: [{"stl": str, "z": (zmin, zmax)}]. A height-range estimate: a part
-    counts in a layer when the layer's middle is inside its z range.
+    parts: [{"stl": str, "z": (zmin, zmax), "colour": name}], every part on the
+    plate (an assembly or separate objects: two objects of different colours
+    side by side share every layer). Parts of the same colour count once; a
+    part without "colour" counts as its own colour. A height-range estimate: a
+    part counts in a layer when the layer's middle is inside its z range.
     """
     if not parts or layer <= 0:
         return {"layers": 0, "mixed_layers": 0, "max_colours_per_layer": 0}
@@ -111,7 +114,7 @@ def colour_layers(parts: Sequence[dict], layer: float) -> dict:
     mixed, most = 0, 0
     for k in range(n):
         zc = (k + 0.5) * layer
-        here = sum(1 for p in parts if p["z"][0] < zc < p["z"][1])
+        here = len({p.get("colour") or p.get("stl") for p in parts if p["z"][0] < zc < p["z"][1]})
         most = max(most, here)
         if here >= 2:
             mixed += 1
@@ -128,27 +131,45 @@ def _by_colour(parts: Sequence[dict]) -> Dict[str, dict]:
     return out
 
 
-def suggest_nozzles(profile: dict, parts: Sequence[dict], material: str, mixed_layers: Optional[int] = None) -> Dict[str, str]:
-    """Which nozzle each COLOUR should use (keyed by colour name, job format 2).
+def nozzle_options(profile: dict, parts: Sequence[dict], material: str, mixed_layers: Optional[int] = None,
+                   external_spool: bool = True) -> List[dict]:
+    """The nozzle plans worth comparing, keyed by colour name (job format 2).
 
     On the X2D the AMS feeds the left nozzle and the external spool the right
-    one. Everything stays left (AMS only, nothing to load on the external
-    holder) when there is one colour, when the material is TPU, or when the
-    colours only change by height (no layer holds two colours: one change per
-    boundary, x2d-print colour rule 2). Otherwise the dominant colour (most
-    layers, then most volume) goes right on the external spool and the
-    accents left in the AMS: a nozzle switch costs no purge, a swap does.
+    one. "all_left" (AMS only, nothing on the external holder) is always a
+    plan. "dominant_right" (the colour with the most layers, then the most
+    volume, on the external spool; accents in the AMS) is added only when it
+    can help: two or more colours that share layers (`mixed_layers` > 0,
+    counted over every part on the plate), a material the right nozzle takes
+    (not TPU) and a spool that can go on the external holder. A nozzle switch
+    costs no colour purge, but the second nozzle takes about 10 minutes to heat
+    and prime once; which plan is faster depends on how many layers mix
+    colours, so the caller estimates both and picks the faster.
     """
     if profile["name"] != "bambu-x2d" or not parts:
-        return {}
+        return []
     colours = _by_colour(parts)
-    all_left = {c: "left" for c in colours}
-    if len(colours) == 1 or (material or "").upper() in profile.get("right_nozzle_refuses", ()):
-        return all_left
-    if mixed_layers == 0:
-        return all_left
+    plans = [{"option": "all_left", "label": "all colours on the left nozzle (AMS)",
+              "nozzles": {c: "left" for c in colours}}]
+    if (len(colours) < 2 or (material or "").upper() in profile.get("right_nozzle_refuses", ())
+            or not mixed_layers or not external_spool):
+        return plans
     dominant = max(colours, key=lambda c: (colours[c]["layers"], colours[c]["volume_mm3"]))
-    return {c: ("right" if c == dominant else "left") for c in colours}
+    plans.append({"option": "dominant_right", "label": f"{dominant} on the right nozzle (external spool)",
+                  "nozzles": {c: ("right" if c == dominant else "left") for c in colours}})
+    return plans
+
+
+def suggest_nozzles(profile: dict, parts: Sequence[dict], material: str, mixed_layers: Optional[int] = None,
+                    external_spool: bool = True) -> Dict[str, str]:
+    """Rule-of-thumb plan without an estimate: the dominant colour right when colours share layers.
+
+    The build uses nozzle_options() and the time estimate instead; this stays
+    for callers that have no estimate (one colour, colours only by height and
+    TPU always give all left).
+    """
+    plans = nozzle_options(profile, parts, material, mixed_layers, external_spool)
+    return plans[-1]["nozzles"] if plans else {}
 
 
 def slicer_settings(*, walls: int, infill: float, layer: float, top_layers: int, bottom_layers: int,
@@ -168,7 +189,8 @@ def x2d_job(name: str, parts: Sequence[dict], *, assembly: bool, material: str, 
             nozzle: float, supports: bool, profile: dict, printer_notes: Sequence[str],
             settings: Optional[Dict[str, str]] = None, estimate: Optional[dict] = None,
             variants: Optional[Sequence[dict]] = None, variant: str = "standard", quantity: int = 1,
-            first_print: Optional[bool] = None) -> dict:
+            first_print: Optional[bool] = None, suggested_nozzles: Optional[Dict[str, str]] = None,
+            nozzle_options: Optional[Sequence[dict]] = None, external_spool: bool = True) -> dict:
     """Draft job for the x2d-print skill (format 2, see its SKILL.md).
 
     `template` and each part's `filament` stay empty on purpose: they come
@@ -184,9 +206,10 @@ def x2d_job(name: str, parts: Sequence[dict], *, assembly: bool, material: str, 
         objects = [{"name": name, "parts": stl_parts}]
     else:
         objects = [{"name": Path(p["stl"]).stem, "parts": [p]} for p in stl_parts]
-    spans = [{"stl": p["stl"], "z": p["z"]} for p in parts]
-    mix = colour_layers(spans, layer) if assembly else {}
-    nozzles = suggest_nozzles(profile, parts, material, mix.get("mixed_layers") if assembly else 0)
+    spans = [{"stl": p["stl"], "z": p["z"], "colour": p["colour"]} for p in parts]
+    mix = colour_layers(spans, layer)
+    nozzles = (dict(suggested_nozzles) if suggested_nozzles is not None
+               else suggest_nozzles(profile, parts, material, mix.get("mixed_layers"), external_spool))
     if settings is None:
         settings = {"enable_support": "1"} if supports else {}
     todo = [
@@ -211,6 +234,7 @@ def x2d_job(name: str, parts: Sequence[dict], *, assembly: bool, material: str, 
                    "volume_mm3": round(p.get("volume_mm3", 0.0), 1)} for p in parts],
         "colour_layers": mix,
         "suggested_nozzles": nozzles,
+        "external_spool": bool(external_spool),
         "notes": list(printer_notes),
         "todo": todo,
     }
@@ -218,6 +242,8 @@ def x2d_job(name: str, parts: Sequence[dict], *, assembly: bool, material: str, 
         design["first_print"] = bool(first_print)
     if estimate:
         design["estimate"] = estimate
+    if nozzle_options:
+        design["nozzle_options"] = [dict(o) for o in nozzle_options]
     job = {
         "name": name,
         "template": "",

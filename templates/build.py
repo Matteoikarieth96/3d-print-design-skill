@@ -69,7 +69,7 @@ FITS = cad.load_fits(PROJECT_DIR)  # per-side clearances: fits.json if present, 
 
 # ===================== PARAMETERS START (edit only this block) =====================
 NAME = "mounting-plate"          # output file stem: a-z, 0-9 and dashes only
-MATERIAL = "PETG"                # from intake; sets density for the mass estimate
+MATERIAL = "PLA"                 # from intake (PLA if unsure); sets density for the mass estimate
 COLOR = "#4f8cff"                # preview colour in the viewer, or {suffix: "#rrggbb"} per part
 COLOUR_NAME = "blue"             # filament colour in words, or {suffix: name}; goes to the print hand-off
 
@@ -81,6 +81,7 @@ OVERHANG_LIMIT = FITS.get("overhang_ok_deg", 45)  # degrees from vertical withou
 SUPPORTS_ALLOWED = False         # from intake; False turns overhang warnings into errors
 EXPECTED_BODIES = 1              # one solid; a second body means a loose piece
 ASSEMBLY = False                 # True: the parts are the colours of ONE object, printed in place
+EXTERNAL_SPOOL = True            # X2D, from intake: can a spool go on the external holder (right nozzle)? False = AMS only, all on the left
 QUANTITY = 1                     # copies to print (multiplies filament and time in the estimate)
 FIRST_PRINT = True               # from intake: True if the person has never printed (x2d-print gives the full guide)
 

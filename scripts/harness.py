@@ -74,6 +74,7 @@ def run(g: dict, argv=None, script: Path = None) -> int:
     ap.add_argument("--variants", action="store_true",
                     help="also build every version in VARIANTS into out/variants/ and compare them")
     ap.add_argument("--no-handoff", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--nozzle-plan", default=None, help=argparse.SUPPRESS)   # the chosen version's plan, for --variants
     ap.add_argument("--thin-walls", type=int, default=400, metavar="N",
                     help="surface samples for the thin wall check (0 to skip)")
     args = ap.parse_args(argv)
@@ -103,7 +104,8 @@ def run(g: dict, argv=None, script: Path = None) -> int:
     for v in others:
         sub = f"{args.out}/variants/{v}"
         cmd = [sys.executable, "-P", str(Path(script).resolve()), "--variant", v, "--out", sub,
-               "--thin-walls", str(args.thin_walls), "--no-handoff"] + (["--check"] if args.check else [])
+               "--thin-walls", str(args.thin_walls), "--no-handoff",
+               "--nozzle-plan", json.dumps(built["nozzles"])] + (["--check"] if args.check else [])
         res = subprocess.run(cmd, cwd=project_dir, capture_output=True, text=True)
         row = {"name": v, "about": _about(g, v, variants), "ok": res.returncode == 0, "dir": f"variants/{v}"}
         summary = None
@@ -118,12 +120,17 @@ def run(g: dict, argv=None, script: Path = None) -> int:
         rows.append(row)
     material = g["MATERIAL"]
     text = est.table(rows, material)
-    print("\nVersions to compare (estimates before slicing; the slicer gives the exact figure):\n" + text)
+    rough = any(r.get("estimate") and est.rough_text(r["estimate"]) for r in rows)
+    print("\nVersions to compare (estimates before slicing; the slicer gives a closer figure"
+          + ("; " + est.ROUGH_LABEL if rough else "") + "):\n" + text)
     if args.check:
         print("\ncheck only: nothing written")
         return 0
-    atomic_write(out_dir / "variants.md", "# Versions of " + name + "\n\n" + text + "\n\nEstimates before slicing "
-                 "(grams within about 10 %, time within about 20 % on the Bambu Lab X2D; rough on other printers). "
+    scope = ("**" + est.ROUGH_LABEL + ".**\n\n" if rough else "")
+    atomic_write(out_dir / "variants.md", "# Versions of " + name + "\n\n" + scope + text + "\n\nEstimates before "
+                 "slicing. Measured field: Bambu Lab X2D, PLA, 0.4 mm nozzle, 0.2 mm layers, no supports, infill up "
+                 "to 40 %; there every calibration and holdout slice fell inside the range shown. Outside it the "
+                 "range is wider and marked rough. The slicer gives a closer figure. "
                  "Build one with `build.py --variant NAME`.\n")
     atomic_write(out_dir / VARIANTS_FILE, json.dumps({"chosen": args.variant, "versions": [
         {k: r.get(k) for k in ("name", "about", "ok", "dir", "estimate")} for r in rows]}, indent=2) + "\n")
@@ -195,14 +202,43 @@ def _build_one(g, args, name, out_dir, profile, project_dir, variants):
                                  infill=st["infill"], top_layers=st["top_layers"], bottom_layers=st["bottom_layers"])
         mv["colour"] = colours[suffix]
         vols.append(mv)
-    mix = printers.colour_layers([{"stl": h["stl"], "z": h["z"]} for h in handoff], g["LAYER"]) if together else {}
-    nozzle_of = printers.suggest_nozzles(profile, handoff, g["MATERIAL"], mix.get("mixed_layers", 0) if together else 0)
-    if profile["nozzles"] < 2:
+    # colours that share layers anywhere on the plate (one object or several side by side)
+    mix = printers.colour_layers([{"stl": h["stl"], "z": h["z"], "colour": h["colour"]} for h in handoff],
+                                 g["LAYER"])
+    external = bool(g.get("EXTERNAL_SPOOL", True))
+    plans = (printers.nozzle_options(profile, handoff, g["MATERIAL"], mix.get("mixed_layers", 0), external)
+             if profile["nozzles"] >= 2 else [])
+    forced = json.loads(args.nozzle_plan) if args.nozzle_plan else None
+    if isinstance(forced, dict) and set(colours.values()) <= set(forced):
+        plans = [{"option": "chosen", "label": "the chosen version's nozzles",
+                  "nozzles": {c: forced[c] for c in set(colours.values())}}]
+
+    def run_estimate(nozzle_of):
+        return est.estimate(vols, profile=profile["name"], material=g["MATERIAL"], layer=g["LAYER"],
+                            quantity=int(g.get("QUANTITY", 1)), nozzle_of=nozzle_of,
+                            supports=bool(g["SUPPORTS_ALLOWED"]), nozzle=g["NOZZLE"])
+
+    options = []
+    for plan in plans:
+        pe = run_estimate(plan["nozzles"])
+        options.append(dict(plan, minutes=pe["minutes"], grams=pe["grams"], estimate=pe))
+    if options:
+        best = min(options, key=lambda o: o["estimate"]["minutes"])   # ties keep all_left: nothing to load
+        e = best["estimate"]
+        nozzle_of = best["nozzles"]
+        others = [o for o in options if o is not best]
+        if others:
+            e["other_nozzles"] = {k: others[0][k] for k in ("option", "label", "minutes", "grams")}
+    else:
         nozzle_of = {}
-    e = est.estimate(vols, profile=profile["name"], material=g["MATERIAL"],
-                     layer=g["LAYER"], quantity=int(g.get("QUANTITY", 1)), nozzle_of=nozzle_of)
+        e = run_estimate({})
     label = f"{args.variant}, {st['walls']} walls, {st['infill']:g}% infill, {g['LAYER']:g} mm layers"
     print(est.describe(e, label, g["MATERIAL"]))
+    if len(options) > 1:
+        print(f"nozzles: {best['label']} is faster (~{best['minutes']} min, {best['grams']:g} g) than "
+              f"{others[0]['label']} (~{others[0]['minutes']} min, {others[0]['grams']:g} g)")
+    elif profile["nozzles"] >= 2 and len(set(colours.values())) > 1 and not external:
+        print("nozzles: EXTERNAL_SPOOL = False, every colour on the left nozzle (AMS)")
 
     stls = {}
     if not args.check:
@@ -225,7 +261,9 @@ def _build_one(g, args, name, out_dir, profile, project_dir, variants):
     if args.check and not args.variants:
         print("\ncheck only: nothing written")
     return {"estimate": e, "parts": stls, "handoff": handoff, "together": together, "notes": notes,
-            "settings": st}
+            "settings": st, "nozzles": nozzle_of, "external_spool": external,
+            "nozzle_options": [{k: o[k] for k in ("option", "label", "nozzles", "minutes", "grams")}
+                               for o in options if o["option"] != "chosen"]}
 
 
 def _handoff(g, args, name, out_dir, profile, project_dir, built, rows) -> int:
@@ -258,7 +296,8 @@ def _handoff(g, args, name, out_dir, profile, project_dir, built, rows) -> int:
                  "settings": printers.slicer_settings(walls=vs["walls"], infill=vs["infill"], layer=g["LAYER"],
                                                       top_layers=vs["top_layers"], bottom_layers=vs["bottom_layers"],
                                                       supports=g["SUPPORTS_ALLOWED"]),
-                 "estimate": {k: r["estimate"][k] for k in ("grams", "metres", "minutes", "minutes_range")}}
+                 "estimate": {k: r["estimate"][k] for k in ("grams", "metres", "minutes", "minutes_range",
+                                                            "in_calibration") if k in r["estimate"]}}
         changed = {stl: f"{r['dir']}/{stl}" for stl, h in (r.get("parts") or {}).items()
                    if built["parts"].get(stl) != h}
         if changed:
@@ -268,9 +307,11 @@ def _handoff(g, args, name, out_dir, profile, project_dir, built, rows) -> int:
     job = printers.x2d_job(name, built["handoff"], assembly=built["together"], material=g["MATERIAL"],
                            layer=g["LAYER"], nozzle=g["NOZZLE"], supports=g["SUPPORTS_ALLOWED"], profile=profile,
                            printer_notes=built["notes"], settings=settings,
-                           estimate={k: e[k] for k in ("grams", "metres", "minutes", "minutes_range", "purge_g")},
+                           estimate={k: e[k] for k in ("grams", "metres", "minutes", "minutes_range", "purge_g",
+                                                       "in_calibration", "outside_because")},
                            variants=job_variants, variant=args.variant, quantity=int(g.get("QUANTITY", 1)),
-                           first_print=g.get("FIRST_PRINT"))
+                           first_print=g.get("FIRST_PRINT"), suggested_nozzles=built["nozzles"],
+                           nozzle_options=built["nozzle_options"] or None, external_spool=built["external_spool"])
     for note in printers.keep_filled(job, old):
         print(f"note: {note}")
     try:

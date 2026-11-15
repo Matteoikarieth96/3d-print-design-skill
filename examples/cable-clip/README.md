@@ -35,5 +35,9 @@ overhang, all flat faces on 0.2 mm layers, 2 holes found, no thin walls, 4/4
 probes. Outputs are committed in `out/`.
 
 **Print sheet (short):** plate down as modelled, PETG 230 to 245 C nozzle, 75 to
-85 C bed, 0.2 mm layers, 3 walls, 25 % infill, no supports, no brim, 4 copies,
-about 2.7 g each at 100 % infill (less in practice).
+85 C bed, 0.2 mm layers, 3 walls, 15 % infill (the standard version), no
+supports, no brim. Estimate per clip: about 2.4 g and about 16 min (10 to
+30 min), marked rough: outside the measured range, trust the slicer (generic
+printer profile, PETG). For reference, the same clip in PLA on a Bambu Lab X2D
+sliced at 15 min and 2.1 g. The intake said 4 copies; set `QUANTITY = 4` or
+place 4 copies in the slicer.

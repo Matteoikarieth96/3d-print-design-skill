@@ -16,7 +16,7 @@ because the slicer shows it in English.
 - **Elephant foot**: the first layers squash a little wider; a small chamfer on the bottom edge hides it.
 - **PLA / PETG / TPU / ABS-ASA**: PLA is the easiest and stiffest, softens in a hot car; PETG is tougher and takes more heat; TPU is rubbery; ABS and ASA take heat and sun but need ventilation.
 - **Filament**: the plastic wire on the spool, 1.75 mm thick; 1 m of PLA weighs about 3 g.
-- **Slicer**: the program (Bambu Studio, PrusaSlicer, Cura) that turns the 3D model into printer instructions and gives the exact time and grams.
+- **Slicer**: the program (Bambu Studio, PrusaSlicer, Cura) that turns the 3D model into printer instructions and gives a closer time and grams than any estimate before slicing.
 - **STL / 3MF**: STL is the shape only; a 3MF project also holds the colours and settings.
 - **Purge**: filament thrown away at each colour change on the same nozzle, so the new colour comes out clean.
 - **AMS / external spool**: on Bambu printers the AMS is the box that holds 4 spools and changes them automatically; the external spool hangs on the back. On the X2D the AMS feeds the left nozzle, the external spool the right one.

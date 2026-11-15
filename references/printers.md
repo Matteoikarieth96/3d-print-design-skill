@@ -27,10 +27,13 @@ checks them again against the person's Bambu Studio when it builds the project.
   The prime tower (35 mm wide) also takes plate space in a multicolour print: a part near
   the full width may need its own plate.
 - **Two nozzles.** Left: direct drive, fed by the AMS (up to 4 colours per AMS). Right:
-  Bowden, fed by the external spool, **no TPU**. Switching nozzle wastes almost nothing;
-  changing colour on the same nozzle costs about 2 minutes and 0.75 g of purge each time
-  (measured: a 40 x 40 x 10 mm block takes 17 min in one colour, 42 min with a second colour
-  on the other nozzle, 2 h 04 min and 43.5 g with both colours on one nozzle).
+  Bowden, fed by the external spool, **no TPU**. Changing colour on the same nozzle costs
+  about 2 minutes and 0.7 g of purge each time. A second nozzle saves that per-change purge
+  but costs about 10 minutes once (heating and priming it), plus a short switch each layer.
+  Measured, total (of which purge): a 40 x 40 x 10 mm block takes 17 min and 6.9 g in one
+  colour; with a 10 mm stripe in a second colour on the other nozzle 42 min and 12.6 g
+  (of which 5.2 g purge); with both colours on one nozzle 2 h 04 min and 43.5 g (of which
+  36.1 g purge, 49 colour changes).
 - **Defaults:** 0.4 mm nozzle, 0.20 mm layers (process "0.20mm Standard @BBL X2D"),
   Textured PEI Plate (the bottom face takes its texture; the Cool Plate is not supported).
 - **One material per print.** PLA with PETG bonds poorly. All colours of one build use
@@ -43,12 +46,18 @@ checks them again against the person's Bambu Studio when it builds the project.
    (on the bed, overhangs, build volume) and must touch without overlapping. Cut each
    accent out of the base with the same outline (`cad.difference(base, accent)`), as in
    `examples/two-colour-coaster`.
-2. **Dominant colour on its own nozzle, when colours share layers.** Two colours on the
-   X2D cost almost no purge: one per nozzle. When some layers hold two colours, the
-   hand-off suggests the colour that spans the most layers for the right nozzle (external
-   spool), the accents for the left (AMS). When colours only change by height (no layer
-   holds two colours) everything stays on the left nozzle: one change per boundary, and
-   nothing to load on the external holder. One colour: left nozzle only.
+2. **Nozzle plan chosen by time, when colours share layers.** The layers that hold two
+   colours are counted over every part on the plate. The build then estimates two plans:
+   all colours on the left nozzle (AMS, a purge on every shared layer) and the dominant
+   colour, the one spanning the most layers, on the right nozzle (external spool, about
+   10 minutes once to heat it, little purge). It suggests the faster one and records both,
+   with minutes and grams, in `design.nozzle_options`; the build output and the print
+   sheet show the alternative ("other nozzle choice: ~X min, Y g"). Few shared layers (the
+   two-colour coaster: 15) favour all left; many (two separate objects of different
+   colours side by side) favour the right nozzle. Set `EXTERNAL_SPOOL = False` in
+   `build.py` when no spool can go on the external holder: everything then stays on the
+   left nozzle. When colours only change by height (no layer holds two colours)
+   everything stays on the left: one change per boundary. One colour: left nozzle only.
 3. **Accents in few layers.** Inlays on top (flush, 3 layers deep) or face down in the
    first 3 to 5 layers. With three or more colours, every layer that holds more colours
    than there are nozzles costs a purge: the `colour_layers` check counts them and warns
@@ -80,8 +89,9 @@ x2d-print job format, with an extra `design` block:
   `variants/<name>/`). x2d-print can slice them all and show the real numbers side by side.
 - `design` (format 2): printer, material, layer and nozzle, the chosen `variant`,
   `quantity`, `first_print`, each part's height range and layer count, how many layers mix
-  colours, `suggested_nozzles` **keyed by colour name**, the pre-slice `estimate` (grams,
-  metres, minutes), the notes printed by the build, and a `todo` list for x2d-print.
+  colours (over all parts), `suggested_nozzles` **keyed by colour name**,
+  `external_spool`, `nozzle_options` (each plan with its nozzles, minutes and grams), the pre-slice `estimate` (grams,
+  metres, minutes, range, `in_calibration`), the notes printed by the build, and a `todo` list for x2d-print.
 - **A rebuild keeps what x2d-print filled in** (template path, filament numbers, nozzles)
   as long as every STL keeps its name and colour; if colours change they are reset and
   the build says so.

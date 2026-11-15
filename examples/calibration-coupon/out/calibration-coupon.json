@@ -1,7 +1,7 @@
 {
   "name": "calibration-coupon",
   "units": "mm",
-  "generated_utc": "2026-10-08T11:36:45+00:00",
+  "generated_utc": "2026-11-15T10:12:54+00:00",
   "generator": "3d-print-design build script",
   "stl": "calibration-coupon.stl",
   "stl_sha256": "ef379e59fcaaad13650bdd4b1bf1264bb0cb3c22238b56e7e16e2ffb65371d8d",
@@ -551,5 +551,33 @@
     ],
     "bodies": 4,
     "expected_warnings": "overhang (the 50 and 60 degree fins are meant to show where your printer fails) and thin walls at the knife-edge tips of the steep fins"
-  }
+  },
+  "estimate": {
+    "measured_profile": false,
+    "in_calibration": false,
+    "outside_because": [
+      "printer speeds not measured (generic profile)"
+    ],
+    "quantity": 1,
+    "layers": 80,
+    "model_g": 12.4,
+    "purge_g": 0.0,
+    "grams": 12.4,
+    "grams_range": [
+      8.1,
+      22.3
+    ],
+    "metres": 4.15,
+    "minutes": 50,
+    "minutes_exact": 49.54,
+    "minutes_range": [
+      30,
+      90
+    ],
+    "prep_min": 5,
+    "colour_min": 0,
+    "swaps": 0,
+    "nozzle_switches": 0
+  },
+  "printer": "generic"
 }

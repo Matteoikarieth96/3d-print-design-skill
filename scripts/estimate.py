@@ -1,6 +1,6 @@
 """estimate: filament and print time before slicing, so the person can choose a version.
 
-The slicer (Bambu Studio, PrusaSlicer, Cura...) gives the real figure. This
+The slicer (Bambu Studio, PrusaSlicer, Cura...) gives a closer figure. This
 module answers the question a beginner asks first, "how long and how much
 filament?", while the design is still numbers, and lets several versions
 (light / standard / strong, smaller, fewer colours) be compared side by side.
@@ -13,18 +13,38 @@ Material model, per part:
   grams = (shell + core) x density, metres = volume / filament cross section
 
 Time model (seconds), fitted on real slices:
-  prep + shell x s_shell + core x s_core + layers x s_layer
+  prep + sum over layers of max(layer print time + s_layer, minimum layer time)
   + same-nozzle colour swaps x s_swap + nozzle switches x s_switch
+  (+ once s_second_nozzle when both nozzles print)
+where a part's printing time (shell x s_shell + core x s_core) is spread over
+its layers in proportion to each layer's cross-section area. The minimum layer
+time is Bambu Studio's own "slow down for better layer cooling" setting of the
+Generic PLA profile (8 s): small layers are slowed down to it, never below its
+20 mm/s minimum speed, which is why a tall thin part takes much longer than its
+filament suggests.
 
-Bambu Lab X2D numbers were fitted on 31 Bambu Studio 02.09 command-line
-slices (0.20mm Standard @BBL X2D, PLA, template from the person's own Bambu
-Studio): 7 shapes from a 60 x 24 x 4 mm plate to a 100 x 80 x 10 mm slab and a
-60 mm tall tube, at 2/10 %, 2/15 %, 3/15 % and 4/40 % walls/infill, plus a
-40 x 40 x 10 mm block printed in one colour, two colours on one nozzle and two
-colours on two nozzles, and the two-colour coaster example (star on the
-other nozzle). Grams were within 9 % of the slicer, time within 17 % (mean
-8 %). The generic profile is a rough guess for a typical bed-slinger
-printer, not measured: say so.
+Bambu Lab X2D numbers: Bambu Studio 02.09.01.70 command-line slices, process
+"0.20mm Standard @BBL X2D", Generic PLA, 0.4 mm nozzle, Textured PEI plate
+(references/estimate-calibration.md; every slice is a row of
+references/estimate-calibration.csv, and tests/test_estimate_calibration.py
+keeps that file and this code in step).
+- Calibration error (34 slices, coefficients fitted on 32 of them: 7 simple
+  shapes at 2/10 %, 2/15 %, 3/15 % and 4/40 % walls/infill, a 40 x 40 x 10 mm
+  block in one and two colours on one and two nozzles, the coaster example):
+  time within 13 % (mean 3 %), grams within 10 % (mean 4 %).
+- Out-of-sample error, reported apart (19 holdout slices never used for
+  fitting, parts designed with this skill and sliced through x2d-print; 18 of
+  them inside the measured field): time within 32 % (mean 8 %), grams within
+  16 % (mean 7 %). The slicer was slower than the model on parts with many
+  small features (the calibration coupon +47 %, a plate with 25 holes +28 %),
+  so the time range reaches 50 % above the estimate.
+The minimum layer time was added after the first holdout (a 15 x 15 x 80 mm
+post took 61 min against 39 estimated) and capped by the minimum speed after
+the second (a 12 x 70 mm pin); the coefficients were refitted on the
+calibration rows only. Those two holdout rows are marked in the CSV.
+
+The generic profile is a rough guess for a typical bed-slinger printer, not
+measured: it always gets the wide range and the "rough" label.
 """
 from __future__ import annotations
 
@@ -37,22 +57,36 @@ import numpy as np
 DENSITY = {"PLA": 1.24, "PETG": 1.27, "TPU": 1.21, "ABS": 1.04, "ASA": 1.07}
 FILAMENT_MM2 = math.pi * (1.75 / 2) ** 2   # 1.75 mm filament: 2.405 mm2, 1 m = 2405 mm3
 
-# Spread of the time model on the calibration slices; shown as a range.
-TIME_SPREAD = 0.20
-GRAMS_SPREAD = 0.10
+# Range shown around the estimate: (below, above) as fractions of the estimate.
+# Inside the measured field every calibration and holdout row falls inside it
+# (tests/test_estimate_calibration.py checks this on the published CSV). Time
+# was widened upwards after the holdout: detailed parts print slower.
+TIME_SPREAD = (0.15, 0.50)
+GRAMS_SPREAD = (0.15, 0.10)
+# Outside the measured field (another printer, material, nozzle, layer height,
+# supports or infill above 40 %): a rough figure, trust the slicer.
+ROUGH_TIME_SPREAD = (0.35, 0.80)
+ROUGH_GRAMS_SPREAD = (0.35, 0.80)
+TPU_SPREAD = (0.45, 1.20)        # TPU prints much slower and its speeds vary a lot
+ROUGH_LABEL = "rough: outside the measured range, trust the slicer"
+
+# What the X2D numbers were measured on (estimate-calibration.md).
+CALIBRATED = {"profile": "bambu-x2d", "material": "PLA", "nozzle": 0.4, "layer": 0.2, "max_infill": 40.0}
 
 SPEEDS: Dict[str, dict] = {
     "bambu-x2d": {
         "measured": True,
-        "prep_s": 466.0,          # heating, levelling, nozzle checks: about 8 minutes per print
-        "shell_s_mm3": 0.090,     # walls and solid layers: about 11 mm3/s
-        "core_s_mm3": 0.075,      # sparse infill: about 13 mm3/s
-        "layer_s": 3.1,           # travel, layer change, wipe
-        "swap_s": 125.0,          # AMS colour swap on the same nozzle: cut, change, flush
-        "swap_g": 0.75,           # filament flushed per swap (plus prime tower share)
-        "second_nozzle_s": 497.0, # using both nozzles: heating and priming the second one, once per print
-        "second_nozzle_g": 0.8,   # prime tower base and first prime of the second nozzle
-        "switch_s": 21.0,         # each switch to the other nozzle (already loaded)
+        "prep_s": 388.0,          # heating, levelling, nozzle checks: about 6.5 minutes per print
+        "shell_s_mm3": 0.0964,    # walls and solid layers: about 10 mm3/s
+        "core_s_mm3": 0.0835,     # sparse infill: about 12 mm3/s
+        "layer_s": 1.95,          # travel, layer change, wipe
+        "min_layer_s": 8.0,       # Generic PLA slow_down_layer_time: small layers are slowed to 8 s
+        "min_speed_mm_s": 20.0,   # Generic PLA slow_down_min_speed: but never below 20 mm/s
+        "swap_s": 127.0,          # AMS colour swap on the same nozzle: cut, change, flush
+        "swap_g": 0.72,           # filament flushed per swap (plus prime tower share)
+        "second_nozzle_s": 621.0, # using both nozzles: heating and priming the second one, about 10 min once
+        "second_nozzle_g": 0.75,  # prime tower base and first prime of the second nozzle
+        "switch_s": 16.7,         # each switch to the other nozzle (already loaded)
         "switch_g": 0.09,         # prime tower share per switch
     },
     "generic": {
@@ -61,6 +95,8 @@ SPEEDS: Dict[str, dict] = {
         "shell_s_mm3": 0.25,      # about 4 mm3/s, typical 50 to 60 mm/s printer
         "core_s_mm3": 0.18,
         "layer_s": 2.0,
+        "min_layer_s": 8.0,       # most slicers slow small layers down to a few seconds each
+        "min_speed_mm_s": 20.0,
         "swap_s": 300.0,          # manual filament change (M600): the person swaps the spool
         "swap_g": 0.5,
         "second_nozzle_s": 0.0,
@@ -69,6 +105,48 @@ SPEEDS: Dict[str, dict] = {
         "switch_g": 0.0,
     },
 }
+
+
+def layer_areas(mesh, layer: float) -> np.ndarray:
+    """Cross-section area (mm2) of a watertight mesh at the middle of each layer from z = 0.
+
+    Each triangle that crosses a plane gives one directed segment; the shoelace
+    sum over all segments is the section area (order does not matter, only the
+    direction, which the face normal fixes).
+    """
+    if layer <= 0:
+        return np.zeros(0)
+    tri = np.asarray(mesh.vertices, dtype=float)[np.asarray(mesh.faces)]
+    nrm = np.asarray(mesh.face_normals, dtype=float)
+    top = float(tri[:, :, 2].max()) if len(tri) else 0.0
+    n = max(0, int(round(top / layer)))
+    zmin, zmax = tri[:, :, 2].min(1), tri[:, :, 2].max(1)
+    out = np.zeros(n)
+    edges = ((0, 1), (1, 2), (2, 0))
+    for k in range(n):
+        zc = (k + 0.5) * layer + 1e-7
+        sel = (zmin < zc) & (zmax > zc)
+        if not sel.any():
+            continue
+        t, nm = tri[sel], nrm[sel]
+        above = t[:, :, 2] >= zc
+        pts, cross = [], []
+        for i, j in edges:
+            c = above[:, i] != above[:, j]
+            zi, zj = t[:, i, 2], t[:, j, 2]
+            s = np.where(c, (zc - zi) / np.where(c, zj - zi, 1.0), 0.0)
+            pts.append(t[:, i, :2] + s[:, None] * (t[:, j, :2] - t[:, i, :2]))
+            cross.append(c)
+        pts = np.stack(pts, 1)
+        cross = np.stack(cross, 1)
+        idx = np.argsort(~cross, axis=1, kind="stable")[:, :2]
+        rows = np.arange(len(t))
+        p, q = pts[rows, idx[:, 0]], pts[rows, idx[:, 1]]
+        d = q - p
+        flip = (d[:, 0] * -nm[:, 1] + d[:, 1] * nm[:, 0]) < 0
+        p, q = np.where(flip[:, None], q, p), np.where(flip[:, None], p, q)
+        out[k] = 0.5 * float(np.sum(p[:, 0] * q[:, 1] - p[:, 1] * q[:, 0]))
+    return np.clip(out, 0.0, None)
 
 
 def material_volume(mesh, *, layer: float, nozzle: float, walls: int, infill: float,
@@ -85,7 +163,8 @@ def material_volume(mesh, *, layer: float, nozzle: float, walls: int, infill: fl
     core = max(volume - shell, 0.0) * max(0.0, min(infill, 100.0)) / 100.0
     lo, hi = mesh.bounds
     return {"volume_mm3": volume, "shell_mm3": shell, "core_mm3": core,
-            "z": (float(lo[2]), float(hi[2]))}
+            "z": (float(lo[2]), float(hi[2])), "layer_area": layer_areas(mesh, layer).tolist(),
+            "infill": float(infill), "nozzle": float(nozzle), "walls": int(walls)}
 
 
 def colour_changes(spans: Sequence[dict], layer: float, nozzle_of: Dict[str, str]) -> dict:
@@ -123,8 +202,64 @@ def colour_changes(spans: Sequence[dict], layer: float, nozzle_of: Dict[str, str
     return {"swaps": swaps, "switches": switches}
 
 
+def calibration_scope(*, profile: str, material: str, nozzle: float, layer: float, supports: bool,
+                      infill: float) -> List[str]:
+    """Why an estimate falls outside the measured field ([] = inside it)."""
+    why = []
+    if profile != CALIBRATED["profile"]:
+        why.append("printer speeds not measured (generic profile)")
+    mat = (material or "PLA").upper()
+    if mat != CALIBRATED["material"]:
+        why.append(f"{mat} not measured (only PLA)")
+    if abs(float(nozzle) - CALIBRATED["nozzle"]) > 1e-6:
+        why.append(f"{float(nozzle):g} mm nozzle (measured: 0.4)")
+    if abs(float(layer) - CALIBRATED["layer"]) > 1e-6:
+        why.append(f"{float(layer):g} mm layers (measured: 0.2)")
+    if supports:
+        why.append("supports are not counted (they add filament and time)")
+    if float(infill) > CALIBRATED["max_infill"] + 1e-6:
+        why.append(f"{float(infill):g} % infill (measured up to 40 %)")
+    return why
+
+
+def print_seconds(parts: Sequence[dict], *, profile: str, layer: float, quantity: int = 1) -> float:
+    """Printing time without preparation or colour changes, layer by layer (see module doc).
+
+    A layer takes its share of the parts' printing time plus the layer change,
+    but at least the slicer's minimum layer time; the slicer reaches that by
+    slowing down, never below its minimum speed, so a layer with a very short
+    path (a thin pin) stays shorter than the minimum layer time.
+    """
+    sp = SPEEDS.get(profile, SPEEDS["generic"])
+    q = max(1, int(quantity))
+    top = max((p["z"][1] for p in parts), default=0.0)
+    n = int(round(top / layer)) if layer > 0 else 0
+    per = np.zeros(n)       # seconds of extrusion per layer
+    vol = np.zeros(n)       # mm3 extruded per layer
+    for p in parts:
+        t = p["shell_mm3"] * sp["shell_s_mm3"] + p["core_mm3"] * sp["core_s_mm3"]
+        v = p["shell_mm3"] + p["core_mm3"]
+        area = np.asarray(p.get("layer_area") or [], dtype=float)[:n]
+        if area.size and area.sum() > 0:
+            w = area / area.sum()
+            per[:area.size] += t * w
+            vol[:area.size] += v * w
+        else:   # no layer profile: spread evenly over the part's own layers
+            k0, k1 = int(round(p["z"][0] / layer)), max(int(round(p["z"][1] / layer)), 1)
+            per[k0:k1] += t / max(k1 - k0, 1)
+            vol[k0:k1] += v / max(k1 - k0, 1)
+    per *= q
+    vol *= q
+    used = per > 0
+    line = 1.125 * max((p.get("nozzle", 0.4) for p in parts), default=0.4)
+    slowest = vol[used] / (line * layer) / sp["min_speed_mm_s"]     # whole layer path at the minimum speed
+    floor = np.minimum(sp["min_layer_s"], slowest)
+    return float(np.maximum(per[used] + sp["layer_s"], floor).sum())
+
+
 def estimate(parts: Sequence[dict], *, profile: str, material: str, layer: float, quantity: int = 1,
-             nozzle_of: Optional[Dict[str, str]] = None) -> dict:
+             nozzle_of: Optional[Dict[str, str]] = None, supports: bool = False,
+             nozzle: Optional[float] = None) -> dict:
     """Totals for one print. parts: material_volume() dicts plus "colour".
 
     Copies (quantity) multiply material and printing time, not the preparation
@@ -145,20 +280,35 @@ def estimate(parts: Sequence[dict], *, profile: str, material: str, layer: float
     model_mm3 = (shell + core) * q
     model_g = model_mm3 * density / 1000.0
     total_g = model_g + purge_g
-    print_s = (shell * sp["shell_s_mm3"] + core * sp["core_s_mm3"] + layers * sp["layer_s"]) * q
+    print_s = print_seconds(parts, profile=profile, layer=layer, quantity=q)
     colour_s = ch["swaps"] * sp["swap_s"] + ch["switches"] * sp["switch_s"] + two * sp["second_nozzle_s"]
     total_s = sp["prep_s"] + print_s + colour_s
+    noz = nozzle if nozzle is not None else max((p.get("nozzle", 0.4) for p in parts), default=0.4)
+    infill = max((p.get("infill", 0.0) for p in parts), default=0.0)
+    why = calibration_scope(profile=profile, material=material, nozzle=noz, layer=layer, supports=supports,
+                            infill=infill)
+    inside = not why and sp["measured"]
+    if inside:
+        t_sp, g_sp = TIME_SPREAD, GRAMS_SPREAD
+    elif (material or "").upper() == "TPU":
+        t_sp, g_sp = TPU_SPREAD, TPU_SPREAD
+    else:
+        t_sp, g_sp = ROUGH_TIME_SPREAD, ROUGH_GRAMS_SPREAD
+    minutes = total_s / 60.0
     return {
         "measured_profile": sp["measured"],
+        "in_calibration": inside,
+        "outside_because": why,
         "quantity": q,
         "layers": layers,
         "model_g": round(model_g, 1),
         "purge_g": round(purge_g, 1),
         "grams": round(total_g, 1),
-        "grams_range": [round(total_g * (1 - GRAMS_SPREAD), 1), round(total_g * (1 + GRAMS_SPREAD), 1)],
+        "grams_range": [round(total_g * (1 - g_sp[0]), 1), round(total_g * (1 + g_sp[1]), 1)],
         "metres": round(total_g / density * 1000.0 / FILAMENT_MM2 / 1000.0, 2),
-        "minutes": round(total_s / 60.0),
-        "minutes_range": [_floor5(total_s / 60.0 * (1 - TIME_SPREAD)), _ceil5(total_s / 60.0 * (1 + TIME_SPREAD))],
+        "minutes": round(minutes),
+        "minutes_exact": round(minutes, 2),
+        "minutes_range": [_floor5(minutes * (1 - t_sp[0])), _ceil5(minutes * (1 + t_sp[1]))],
         "prep_min": round(sp["prep_s"] / 60.0),
         "colour_min": round(colour_s / 60.0),
         "swaps": ch["swaps"],
@@ -180,33 +330,75 @@ def duration(minutes: float) -> str:
     return f"{m} min" if m < 60 else f"{m // 60} h {m % 60:02d} min"
 
 
+def time_text(est: dict) -> str:
+    """'~39 min (30 to 50 min)'."""
+    lo, hi = est["minutes_range"]
+    return f"~{duration(est['minutes'])} ({duration(lo)} to {duration(hi)})"
+
+
+def rough_text(est: dict) -> str:
+    """The rough label with its reasons, or '' inside the measured range."""
+    if est.get("in_calibration", est.get("measured_profile", False)):
+        return ""
+    why = est.get("outside_because") or []
+    return ROUGH_LABEL + (f" ({'; '.join(why)})" if why else "")
+
+
 def describe(est: dict, label: str, material: str) -> str:
     """One plain sentence for the build log and the print sheet."""
     lo, hi = est["minutes_range"]
     s = (f"estimate ({label}): about {est['grams']:g} g of {material} ({est['metres']:g} m), "
-         f"{duration(lo)} to {duration(hi)} including about {est['prep_min']} min of printer preparation")
+         f"about {duration(est['minutes'])} ({duration(lo)} to {duration(hi)}) including about "
+         f"{est['prep_min']} min of printer preparation")
     if est["swaps"] or est["nozzle_switches"]:
         s += (f"; colour changes: {est['swaps']} swap(s) on one nozzle, {est['nozzle_switches']} nozzle switch(es), "
               f"about {est['colour_min']} min and {est['purge_g']:g} g of purge")
     if est["quantity"] > 1:
         s += f"; {est['quantity']} copies"
-    if not est["measured_profile"]:
-        s += " (rough: speeds of a typical printer, not measured)"
-    return s + ". The slicer gives the exact figure."
+    other = est.get("other_nozzles")
+    if other:
+        s += f"; other nozzle choice ({other['label']}): ~{duration(other['minutes'])}, {other['grams']:g} g"
+    rough = rough_text(est)
+    if rough:
+        s += f"; {rough}"
+    return s + ". The slicer gives a closer figure."
+
+
+def _signed(v: float, unit: str, fmt: str = "g") -> str:
+    if unit == "min":
+        return f"{'+' if v >= 0 else '-'}{duration(abs(v))}"
+    return f"{v:+{fmt}} {unit}"
 
 
 def table(rows: Sequence[dict], material: str) -> str:
-    """Markdown table of versions: rows = {name, about, estimate, ok}."""
-    out = ["| Version | What changes | Filament | Print time | Checks |", "|---|---|---|---|---|"]
+    """Markdown table of versions: rows = {name, about, estimate, ok}; the first row is the reference."""
+    out = ["| Version | What changes | Filament | Print time | vs standard | Checks |",
+           "|---|---|---|---|---|---|"]
+    ref = next((r.get("estimate") for r in rows if r.get("name") == "standard" and r.get("estimate")), None)
+    rough = []
+    notes = []
     for r in rows:
         e = r.get("estimate")
         if not e:
-            out.append(f"| {r['name']} | {r['about']} | - | - | failed |")
+            out.append(f"| {r['name']} | {r['about']} | - | - | - | failed |")
             continue
-        lo, hi = e["minutes_range"]
         fil = f"~{e['grams']:g} g {material} ({e['metres']:g} m)"
         if e["purge_g"]:
-            fil += f", {e['purge_g']:g} g purge"
-        out.append(f"| {r['name']} | {r['about']} | {fil} | {duration(lo)} to {duration(hi)} | "
-                   f"{'pass' if r.get('ok') else 'failed'} |")
-    return "\n".join(out)
+            fil += f", of which {e['purge_g']:g} g purge"
+        t = time_text(e)
+        if rough_text(e):
+            t += ", rough"
+            rough.append(r["name"])
+        if ref is None or e is ref:
+            vs = "-"
+        else:
+            vs = f"{_signed(e['minutes'] - ref['minutes'], 'min')}, {_signed(round(e['grams'] - ref['grams'], 1), 'g')}"
+        out.append(f"| {r['name']} | {r['about']} | {fil} | {t} | {vs} | {'pass' if r.get('ok') else 'failed'} |")
+        other = e.get("other_nozzles")
+        if other:
+            notes.append(f"{r['name']}, other nozzle choice ({other['label']}): ~{duration(other['minutes'])}, "
+                         f"{other['grams']:g} g")
+    if rough:
+        first = next(r["estimate"] for r in rows if r["name"] == rough[0])
+        notes.append(f"{', '.join(rough)}: {rough_text(first)}")
+    return "\n".join(out + ([""] + [f"- {n}" for n in notes] if notes else []))

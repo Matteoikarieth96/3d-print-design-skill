@@ -228,11 +228,50 @@ class BuildHandoffTests(unittest.TestCase):
         for p in parts:
             self.assertTrue((out / p["stl"]).is_file())
             self.assertIsNone(p["filament"])
-        self.assertEqual(job["design"]["suggested_nozzles"], {"black": "right", "yellow": "left"})
+        # colours meet in only 3 layers: 3 swaps on the left nozzle (about 6 min) beat heating the
+        # right nozzle (about 10 min); real slices: 38 min all left, 41 min black on the right
+        self.assertEqual(job["design"]["suggested_nozzles"], {"black": "left", "yellow": "left"})
         self.assertEqual(job["design"]["colour_layers"]["mixed_layers"], 3)
+        opts = {o["option"]: o for o in job["design"]["nozzle_options"]}
+        self.assertEqual(opts["dominant_right"]["nozzles"], {"black": "right", "yellow": "left"})
+        self.assertLess(opts["all_left"]["minutes"], opts["dominant_right"]["minutes"])
+        self.assertIn("other nozzle choice", res.stdout)
         meta = json.loads((out / "coaster-star.json").read_text())
         self.assertTrue(meta["assembly"])
         self.assertTrue(meta["assembly_check"]["ok"])
+
+    def two_discs(self, external=True):
+        src = (ROOT / "templates" / "build.py").read_text()
+        head, rest = src.split("PLATE_W = 60.0", 1)
+        tail = rest.split("# ====================== GEOMETRY END ======================", 1)[1]
+        params = (head.replace('PRINTER = "generic" ', 'PRINTER = "bambu-x2d" ')
+                  .replace('COLOR = "#4f8cff"', 'COLOR = {"big": "#161616", "small": "#fff144"}')
+                  .replace('COLOUR_NAME = "blue"', 'COLOUR_NAME = {"big": "black", "small": "yellow"}')
+                  .replace("EXTERNAL_SPOOL = True ", f"EXTERNAL_SPOOL = {external} "))
+        geom = ("PROBES_INSIDE = []\nPROBES_OUTSIDE = []\n"
+                "# ====================== PARAMETERS END ======================\n\n"
+                "def build_part():\n"
+                "    return {'big': cad.extrude(cad.circle2d(60.0), 3.0),\n"
+                "            'small': cad.translate(cad.extrude(cad.circle2d(40.0), 3.0), x=60.0)}\n"
+                "# ====================== GEOMETRY END ======================")
+        return params + geom + tail
+
+    def test_separate_objects_of_two_colours_share_layers(self):
+        """Two discs side by side: every layer holds both colours, so the black one goes right."""
+        res = self.build(self.two_discs())
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        job = json.loads((self.project / "out" / "x2d-job.json").read_text())
+        self.assertEqual(len(job["objects"]), 2)
+        self.assertEqual(job["design"]["colour_layers"]["mixed_layers"], 15)
+        self.assertEqual(job["design"]["suggested_nozzles"], {"black": "right", "yellow": "left"})
+        self.assertTrue(job["design"]["external_spool"])
+        # no spool on the external holder: everything on the left nozzle, even if slower
+        res = self.build(self.two_discs(external=False))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        job = json.loads((self.project / "out" / "x2d-job.json").read_text())
+        self.assertEqual(job["design"]["suggested_nozzles"], {"black": "left", "yellow": "left"})
+        self.assertFalse(job["design"]["external_spool"])
+        self.assertIn("EXTERNAL_SPOOL = False", res.stdout)
 
     def test_assembly_with_overlap_writes_nothing(self):
         src = (ROOT / "examples" / "two-colour-coaster" / "build.py").read_text().replace(
@@ -317,7 +356,7 @@ class EstimateTests(unittest.TestCase):
                                 nozzle_of={"a": "left", "b": "right"})
         self.assertEqual(one["swaps"], 50)
         self.assertEqual(two["swaps"], 0)
-        self.assertTrue(one["minutes_range"][0] <= 124 <= one["minutes_range"][1], one)   # slicer 2h 3m
+        self.assertTrue(one["minutes_range"][0] <= 124 <= one["minutes_range"][1], one)   # slicer 2 h 04 min
         self.assertTrue(two["minutes_range"][0] <= 42 <= two["minutes_range"][1], two)     # slicer 42m
         self.assertGreater(one["purge_g"], 30)
         self.assertIn("swap", estimate.describe(one, "standard", "PLA"))

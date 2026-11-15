@@ -143,6 +143,7 @@ def build_coupon(peg_d: float = 6.0, plate_t: float = 4.0, foot: float = 0.4):
 
 def cmd_build(args) -> int:
     import cad
+    import estimate as est
     import printcheck
     import printers
 
@@ -165,9 +166,15 @@ def cmd_build(args) -> int:
         return 1
     params = {"PEG_D": args.peg, "STEP": STEP, "STEPS": STEPS, "FIN_ANGLES": list(FIN_ANGLES),
               "NOZZLE": args.nozzle, "LAYER": args.layer}
+    mv = est.material_volume(mesh, layer=args.layer, nozzle=args.nozzle, walls=3, infill=15,
+                             top_layers=5, bottom_layers=3)
+    mv["colour"] = args.colour
+    e = est.estimate([mv], profile=profile["name"], material=args.material, layer=args.layer, nozzle=args.nozzle)
+    print(est.describe(e, "coupon, 3 walls, 15% infill", args.material))
     try:
         stl, meta = cad.write_part(out_dir, "calibration-coupon", mesh, res, material=args.material,
-                                   params=params, color="#e0a030", bed=bed, extra={"legend": legend})
+                                   params=params, color="#e0a030", bed=bed,
+                                   extra={"legend": legend, "estimate": e, "printer": profile["name"]})
     except (ValueError, OSError) as exc:
         print(f"refusing: {safe_text(exc)}", file=sys.stderr)
         return 2
@@ -180,7 +187,9 @@ def cmd_build(args) -> int:
                                             supports=False)
         job = printers.x2d_job("calibration-coupon", [part], assembly=False, material=args.material,
                                layer=args.layer, nozzle=args.nozzle, supports=False, profile=profile,
-                               printer_notes=printers.notes(profile, args.material, 1, False), settings=settings)
+                               printer_notes=printers.notes(profile, args.material, 1, False), settings=settings,
+                               estimate={k: e[k] for k in ("grams", "metres", "minutes", "minutes_range", "purge_g",
+                                                           "in_calibration", "outside_because")})
         printers.keep_filled(job, printers.read_handoff(out_dir, profile["handoff_file"]))
         path = printers.write_handoff(out_dir, job, profile["handoff_file"])
         print(f"wrote {safe_text(path)}: draft job for the {profile['handoff']} skill")

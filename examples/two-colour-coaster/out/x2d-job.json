@@ -71,9 +71,10 @@
       "max_colours_per_layer": 2
     },
     "suggested_nozzles": {
-      "black": "right",
+      "black": "left",
       "yellow": "left"
     },
+    "external_spool": true,
     "notes": [
       "2 colours: checked against the 235.5 x 256 x 256 mm that both nozzles reach; leave room for the prime tower too",
       "plate: Textured PEI Plate by default (the bottom face takes its texture)"
@@ -86,14 +87,84 @@
     ],
     "first_print": true,
     "estimate": {
-      "grams": 18.7,
-      "metres": 6.27,
-      "minutes": 39,
+      "grams": 19.8,
+      "metres": 6.64,
+      "minutes": 36,
       "minutes_range": [
         30,
-        50
+        55
       ],
-      "purge_g": 1.1
+      "purge_g": 2.2,
+      "in_calibration": true,
+      "outside_because": []
+    },
+    "nozzle_options": [
+      {
+        "option": "all_left",
+        "label": "all colours on the left nozzle (AMS)",
+        "nozzles": {
+          "black": "left",
+          "yellow": "left"
+        },
+        "minutes": 36,
+        "grams": 19.8
+      },
+      {
+        "option": "dominant_right",
+        "label": "black on the right nozzle (external spool)",
+        "nozzles": {
+          "black": "right",
+          "yellow": "left"
+        },
+        "minutes": 41,
+        "grams": 18.7
+      }
+    ]
+  },
+  "variants": [
+    {
+      "name": "light",
+      "about": "2 walls, 10% infill: fastest, least filament; for looks or light use",
+      "settings": {
+        "layer_height": "0.2",
+        "wall_loops": "2",
+        "sparse_infill_density": "10%",
+        "top_shell_layers": "5",
+        "bottom_shell_layers": "3",
+        "enable_support": "0"
+      },
+      "estimate": {
+        "grams": 18.5,
+        "metres": 6.2,
+        "minutes": 34,
+        "minutes_range": [
+          25,
+          55
+        ],
+        "in_calibration": true
+      }
+    },
+    {
+      "name": "strong",
+      "about": "4 walls, 40% infill: slower, more filament; for loads, screws and clips",
+      "settings": {
+        "layer_height": "0.2",
+        "wall_loops": "4",
+        "sparse_infill_density": "40%",
+        "top_shell_layers": "5",
+        "bottom_shell_layers": "3",
+        "enable_support": "0"
+      },
+      "estimate": {
+        "grams": 24.2,
+        "metres": 8.11,
+        "minutes": 41,
+        "minutes_range": [
+          30,
+          65
+        ],
+        "in_calibration": true
+      }
     }
-  }
+  ]
 }
