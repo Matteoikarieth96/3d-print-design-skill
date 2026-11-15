@@ -71,7 +71,8 @@ TPU_SPREAD = (0.45, 1.20)        # TPU prints much slower and its speeds vary a 
 ROUGH_LABEL = "rough: outside the measured range, trust the slicer"
 
 # What the X2D numbers were measured on (estimate-calibration.md).
-CALIBRATED = {"profile": "bambu-x2d", "material": "PLA", "nozzle": 0.4, "layer": 0.2, "max_infill": 40.0}
+CALIBRATED = {"profile": "bambu-x2d", "material": "PLA", "nozzle": 0.4, "layer": 0.2, "max_infill": 40.0,
+              "walls": (2, 4), "top_bottom": (5, 3), "max_colours": 2}
 
 SPEEDS: Dict[str, dict] = {
     "bambu-x2d": {
@@ -164,7 +165,8 @@ def material_volume(mesh, *, layer: float, nozzle: float, walls: int, infill: fl
     lo, hi = mesh.bounds
     return {"volume_mm3": volume, "shell_mm3": shell, "core_mm3": core,
             "z": (float(lo[2]), float(hi[2])), "layer_area": layer_areas(mesh, layer).tolist(),
-            "infill": float(infill), "nozzle": float(nozzle), "walls": int(walls)}
+            "infill": float(infill), "nozzle": float(nozzle), "walls": int(walls),
+            "top_layers": int(top_layers), "bottom_layers": int(bottom_layers)}
 
 
 def colour_changes(spans: Sequence[dict], layer: float, nozzle_of: Dict[str, str]) -> dict:
@@ -203,7 +205,8 @@ def colour_changes(spans: Sequence[dict], layer: float, nozzle_of: Dict[str, str
 
 
 def calibration_scope(*, profile: str, material: str, nozzle: float, layer: float, supports: bool,
-                      infill: float) -> List[str]:
+                      infill: float, colours: int = 1, walls: Sequence[int] = (),
+                      top_bottom: Sequence[Sequence[int]] = ()) -> List[str]:
     """Why an estimate falls outside the measured field ([] = inside it)."""
     why = []
     if profile != CALIBRATED["profile"]:
@@ -219,6 +222,16 @@ def calibration_scope(*, profile: str, material: str, nozzle: float, layer: floa
         why.append("supports are not counted (they add filament and time)")
     if float(infill) > CALIBRATED["max_infill"] + 1e-6:
         why.append(f"{float(infill):g} % infill (measured up to 40 %)")
+    if int(colours) > CALIBRATED["max_colours"]:
+        why.append(f"{int(colours)} colours (measured: 1 or 2)")
+    lo, hi = CALIBRATED["walls"]
+    odd = sorted({int(w) for w in walls if not lo <= int(w) <= hi})
+    if odd:
+        why.append(f"{', '.join(map(str, odd))} walls (measured: {lo} to {hi})")
+    odd_tb = sorted({tuple(int(x) for x in tb) for tb in top_bottom} - {CALIBRATED["top_bottom"]})
+    if odd_tb:
+        top, bottom = odd_tb[0]
+        why.append(f"{top} top / {bottom} bottom layers (measured: 5 / 3)")
     return why
 
 
@@ -286,7 +299,10 @@ def estimate(parts: Sequence[dict], *, profile: str, material: str, layer: float
     noz = nozzle if nozzle is not None else max((p.get("nozzle", 0.4) for p in parts), default=0.4)
     infill = max((p.get("infill", 0.0) for p in parts), default=0.0)
     why = calibration_scope(profile=profile, material=material, nozzle=noz, layer=layer, supports=supports,
-                            infill=infill)
+                            infill=infill, colours=len({p.get("colour", "") for p in parts}),
+                            walls=[p["walls"] for p in parts if "walls" in p],
+                            top_bottom=[(p["top_layers"], p["bottom_layers"]) for p in parts
+                                        if "top_layers" in p and "bottom_layers" in p])
     inside = not why and sp["measured"]
     if inside:
         t_sp, g_sp = TIME_SPREAD, GRAMS_SPREAD

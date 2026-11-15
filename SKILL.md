@@ -197,13 +197,15 @@ rebuild with `--variants`):
 The numbers are estimates before slicing. On the Bambu Lab X2D with PLA, a
 0.4 mm nozzle, 0.2 mm layers, no supports and infill up to 40 %, they were
 fitted on 34 real slices (time within 13 %, grams within 10 %) and checked on
-18 more slices of about 15 parts never used for fitting (time within 32 %,
+18 more slices of about 15 parts (16 strictly out of sample; time within 32 %,
 mostly slower on parts with many small holes, mean 8 %; grams within 16 %).
 The range shown was set after that check, wide enough to hold every slice
 ([references/estimate-calibration.md](references/estimate-calibration.md)).
 Outside that field (other printer, material, nozzle or layer height, supports,
-infill above 40 %) the range is wider and every output says "rough: outside the
-measured range, trust the slicer". Say which case applies, and that the slicer
+infill above 40 %, walls outside 2 to 4, top/bottom other than 5/3, three or more
+colours) the range is wider and every output says "rough: outside the measured
+range, trust the slicer". A few cases are not measured and not flagged (colour pairs
+that purge more, brims, ironing...: see the reference): there, rely on the slicer. Say which case applies, and that the slicer
 gives a closer figure (x2d-print slices every version and shows the real
 numbers side by side).
 When the person chooses, rebuild that one into `out/`:

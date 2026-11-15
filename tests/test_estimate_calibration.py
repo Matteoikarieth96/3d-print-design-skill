@@ -112,13 +112,22 @@ class EstimateScopeTests(unittest.TestCase):
     def est(self, **kw):
         args = dict(profile="bambu-x2d", material="PLA", layer=0.2, supports=False, nozzle=0.4)
         infill = kw.pop("infill", 15)
+        walls = kw.pop("walls", 3)
+        top, bottom = kw.pop("top_bottom", (5, 3))
+        colours = kw.pop("colours", 1)
         args.update(kw)
-        mv = estimate.material_volume(self.mesh, layer=args["layer"], nozzle=args["nozzle"], walls=3, infill=infill,
-                                      top_layers=5, bottom_layers=3)
-        mv["colour"] = "a"
-        return estimate.estimate([mv], **args)
+        parts = []
+        for i in range(colours):
+            mv = estimate.material_volume(self.mesh, layer=args["layer"], nozzle=args["nozzle"], walls=walls,
+                                          infill=infill, top_layers=top, bottom_layers=bottom)
+            mv["colour"] = "abcd"[i]
+            parts.append(mv)
+        return estimate.estimate(parts, **args)
 
     def test_inside_the_measured_field(self):
+        for kw in ({}, {"colours": 2}, {"walls": 2}, {"walls": 4}):
+            with self.subTest(**kw):
+                self.assertTrue(self.est(**kw)["in_calibration"])
         e = self.est()
         self.assertTrue(e["in_calibration"])
         self.assertNotIn("rough", estimate.describe(e, "standard", "PLA"))
@@ -127,7 +136,8 @@ class EstimateScopeTests(unittest.TestCase):
         base = self.est()
         width = base["minutes_range"][1] - base["minutes_range"][0]
         for kw in ({"supports": True}, {"infill": 60}, {"material": "PETG"}, {"layer": 0.28},
-                   {"nozzle": 0.6}, {"profile": "generic"}):
+                   {"nozzle": 0.6}, {"profile": "generic"}, {"colours": 3}, {"walls": 6},
+                   {"top_bottom": (8, 3)}):
             with self.subTest(**kw):
                 e = self.est(**kw)
                 self.assertFalse(e["in_calibration"])

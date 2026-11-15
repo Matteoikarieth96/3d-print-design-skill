@@ -68,17 +68,24 @@ parts, by up to 15 %).
 ## What is NOT covered
 
 The estimate is measured only for: **Bambu Lab X2D, PLA, 0.4 mm nozzle, 0.2 mm layers, no
-supports, infill up to 40 %**. Outside that field `estimate()` sets `in_calibration` to
-false, widens the range to 35 % below and 80 % above (45 % below and 120 % above for TPU)
-and every output says "rough: outside the measured range, trust the slicer":
+supports, infill up to 40 %, 2 to 4 walls, 5 top and 3 bottom layers, one or two colours**.
+Outside that field `estimate()` sets `in_calibration` to false, widens the range to 35 %
+below and 80 % above (45 % below and 120 % above for TPU), lists the reasons in
+`outside_because`, and every output says "rough: outside the measured range, trust the
+slicer". The code checks these cases:
 - other printers (the `generic` profile is a guess, never measured);
 - PETG, TPU, ABS, ASA and other filaments (densities are used for grams, speeds are not
   measured);
 - other nozzles and layer heights;
 - supports: **not counted** in grams or time (the T shelf used 20 % more filament and
   48 % more time than the model);
-- infill above 40 %, other infill patterns, other wall or top/bottom settings than the
-  preset's line widths;
-- three or more colours, several AMS units, the external spool feeding the left nozzle;
-- several plates, very large parts near the bed limits, brims, rafts, ironing, fuzzy skin,
-  vase mode, and "by object" print order.
+- infill above 40 %;
+- fewer than 2 or more than 4 walls, top/bottom layers other than 5/3;
+- three or more colours.
+
+Not measured either, but **not detected by the code** (the estimate keeps its normal
+range, so check the slicer's figure in these cases): other infill patterns, the purge
+for a particular colour pair (dark to light purges more; only one pair was measured),
+several AMS units, the external spool feeding the left nozzle, several plates, very large
+parts near the bed limits, brims, rafts, ironing, fuzzy skin, vase mode, and "by object"
+print order.
