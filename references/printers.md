@@ -53,7 +53,7 @@ checks them again against the person's Bambu Studio when it builds the project.
    10 minutes once to heat it, little purge). It suggests the faster one and records both,
    with minutes and grams, in `design.nozzle_options`; the build output and the print
    sheet show the alternative ("other nozzle choice: ~X min, Y g"). Few shared layers (the
-   two-colour coaster: 15) favour all left; many (two separate objects of different
+   two-colour coaster: 3 of 20) favour all left; many (two separate objects of different
    colours side by side) favour the right nozzle. Set `EXTERNAL_SPOOL = False` in
    `build.py` when no spool can go on the external holder: everything then stays on the
    left nozzle. When colours only change by height (no layer holds two colours)

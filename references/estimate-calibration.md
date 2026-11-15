@@ -61,7 +61,8 @@ Inside the measured field the build shows the estimate and a range of **15 % bel
 `GRAMS_SPREAD`), rounded outwards to 5 minutes. The time range was widened upwards after
 the holdout: parts with many small features print slower than the model says (the
 calibration coupon took 41 min against 28 estimated, the plate with 25 holes 35 against
-28). Grams lean the other way: the model is usually a little high (more so on small
+28). So "every row inside the range" says how wide the range had to be, not that an
+independent test confirmed it. Grams lean the other way: the model is usually a little high (more so on small
 parts, by up to 15 %).
 
 ## What is NOT covered
