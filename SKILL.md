@@ -1,6 +1,6 @@
 ---
 name: 3d-print-design
-description: Design a functional or decorative part for FDM 3D printing in code, from a verbal idea to a checked STL with a local browser preview, for any printer and for complete beginners. Use it whenever the user wants to design, model or adapt a part to 3D print (bracket, hook, clip, holder, spacer, enclosure, box, knob, adapter, wall mount), asks for an STL, asks how long a print takes or how much filament it uses, asks about tolerances, press or snap fits, screw holes or inserts, or says "disegnami un pezzo", "modellalo in 3D", "fammi un supporto", "un gancio da stampare", "quanto ci mette a stamparlo", "che tolleranza metto". It interviews the user first, writes a parametric build script, runs printability checks before any STL is written, estimates filament and print time and compares light, standard and strong versions, previews in the browser and hands over STLs plus a print sheet. For a Bambu Lab X2D it also writes a job for the x2d-print skill. It never talks to a printer.
+description: Design a part for FDM 3D printing in code, from an idea to a checked STL with browser preview, print time and filament estimate. Use when the user wants to design, model or adapt a part to 3D print, asks for an STL, tolerances or fits, or says "disegnami un pezzo", "modellalo in 3D", "fammi un supporto", "quanto ci mette a stamparlo". Not for preparing a 3MF for the Bambu Lab X2D (x2d-print).
 ---
 
 # 3d-print-design
