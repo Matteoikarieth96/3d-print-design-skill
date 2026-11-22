@@ -16,8 +16,15 @@ Time model (seconds), fitted on real slices:
   prep + sum over layers of max(layer print time + s_layer, minimum layer time)
   + same-nozzle colour swaps x s_swap + nozzle switches x s_switch
   (+ once s_second_nozzle when both nozzles print)
+  + what the slower right nozzle adds (right_nozzle_seconds)
 where a part's printing time (shell x s_shell + core x s_core) is spread over
-its layers in proportion to each layer's cross-section area. The minimum layer
+its layers in proportion to each layer's cross-section area. A part on the
+right nozzle prints slower: its walls take 1.54 times as long and the rest
+1.08 times (Bambu Studio's X2D process limits the right, Bowden nozzle to
+50 mm/s on outer walls against 200 on the left one, and to a tenth of the
+acceleration), and each prime tower layer it prints alone costs 12 s more.
+Purge grams also count the prime tower layers below the last colour change
+that hold no change (the tower is printed from the first layer). The minimum layer
 time is Bambu Studio's own "slow down for better layer cooling" setting of the
 Generic PLA profile (8 s): small layers are slowed down to it, never below its
 20 mm/s minimum speed, which is why a tall thin part takes much longer than its
@@ -28,13 +35,15 @@ Bambu Lab X2D numbers: Bambu Studio 02.09.01.70 command-line slices, process
 (references/estimate-calibration.md; every slice is a row of
 references/estimate-calibration.csv, and tests/test_estimate_calibration.py
 keeps that file and this code in step).
-- Calibration error (34 slices, coefficients fitted on 32 of them: 7 simple
-  shapes at 2/10 %, 2/15 %, 3/15 % and 4/40 % walls/infill, a 40 x 40 x 10 mm
-  block in one and two colours on one and two nozzles, the coaster example):
+- Calibration error (43 slices: 7 simple shapes at 2/10 %, 2/15 %, 3/15 % and
+  4/40 % walls/infill, a 40 x 40 x 10 mm block in one and two colours on one
+  and two nozzles, the coaster example, and the 2026-11 run that refitted the
+  second-nozzle numbers on a block, the coaster and a hollow ball with either
+  colour, or the whole part, on the right nozzle):
   time within 13 % (mean 3 %), grams within 10 % (mean 4 %).
-- Out-of-sample error, reported apart (19 holdout slices never used for
-  fitting, parts designed with this skill and sliced through x2d-print; 18 of
-  them inside the measured field): time within 32 % (mean 8 %), grams within
+- Out-of-sample error, reported apart (24 holdout slices never used for
+  fitting, parts designed with this skill and sliced through x2d-print; 23 of
+  them inside the measured field): time within 32 % (mean 7 %), grams within
   16 % (mean 7 %). The slicer was slower than the model on parts with many
   small features (the calibration coupon +47 %, a plate with 25 holes +28 %),
   so the time range reaches 50 % above the estimate.
@@ -85,10 +94,16 @@ SPEEDS: Dict[str, dict] = {
         "min_speed_mm_s": 20.0,   # Generic PLA slow_down_min_speed: but never below 20 mm/s
         "swap_s": 127.0,          # AMS colour swap on the same nozzle: cut, change, flush
         "swap_g": 0.72,           # filament flushed per swap (plus prime tower share)
-        "second_nozzle_s": 621.0, # using both nozzles: heating and priming the second one, about 10 min once
-        "second_nozzle_g": 0.75,  # prime tower base and first prime of the second nozzle
-        "switch_s": 16.7,         # each switch to the other nozzle (already loaded)
-        "switch_g": 0.09,         # prime tower share per switch
+        # Second nozzle: refitted on 9 slices of 3 objects (2026-11 run, estimate-calibration.md)
+        "second_nozzle_s": 275.0, # using both nozzles: priming the second one, about 4.5 min once
+        "second_nozzle_g": 0.16,  # first prime of the second nozzle
+        "switch_s": 23.9,         # each switch to the other nozzle (already loaded), with its prime tower layer
+        "switch_g": 0.103,        # prime tower share per switch
+        "tower_layer_g": 0.0315,  # each prime tower layer below the last change that holds no change
+        "right_wall_x": 1.54,     # walls printed by the right nozzle take 1.54 times as long (outer wall 50 mm/s)
+        "right_other_x": 1.08,    # solid layers and infill on the right nozzle: 1.08 times
+        "right_tower_layer_s": 12.0,  # each no-change prime tower layer printed by the right nozzle
+        "right_only_s": 182.0,    # a print that uses the right nozzle alone: about 3 min more preparation
     },
     "generic": {
         "measured": False,
@@ -177,14 +192,20 @@ def colour_changes(spans: Sequence[dict], layer: float, nozzle_of: Dict[str, str
     (missing = "left"). Simulates the slicer's usual order: start each layer with
     the colour already loaded, then the others on the same nozzle, then the
     other nozzle. Good enough to show why colours in many layers are slow.
+    "tower_layers" counts the layers below the last change that hold no change
+    (the prime tower is printed from the first layer, so they are tower too);
+    "tower_layers_right" those of them printed by the right nozzle.
     """
     if not spans or layer <= 0:
-        return {"swaps": 0, "switches": 0}
+        return {"swaps": 0, "switches": 0, "tower_layers": 0, "tower_layers_right": 0}
     top = max(s["z"][1] for s in spans)
     loaded: Dict[str, Optional[str]] = {"left": None, "right": None}
     current = None
     swaps = switches = 0
+    last = -1           # index of the last layer with a swap or a switch
+    quiet = []          # (layer index, nozzle) of every layer without one
     for k in range(max(0, int(round(top / layer)))):
+        before = swaps + switches
         zc = (k + 0.5) * layer
         here = sorted({s["colour"] for s in spans if s["z"][0] < zc < s["z"][1]})
         groups: Dict[str, List[str]] = {}
@@ -202,7 +223,13 @@ def colour_changes(spans: Sequence[dict], layer: float, nozzle_of: Dict[str, str
                 if loaded[nz] is not None and loaded[nz] != c:
                     swaps += 1
                 loaded[nz] = c
-    return {"swaps": swaps, "switches": switches}
+        if swaps + switches > before:
+            last = k
+        elif here:
+            quiet.append((k, current))
+    idle = [nz for k, nz in quiet if k < last]
+    return {"swaps": swaps, "switches": switches, "tower_layers": len(idle),
+            "tower_layers_right": sum(nz == "right" for nz in idle)}
 
 
 def calibration_scope(*, profile: str, material: str, nozzle: float, layer: float, supports: bool,
@@ -276,6 +303,31 @@ def print_seconds(parts: Sequence[dict], *, profile: str, layer: float, quantity
     return float(np.maximum(per[used] + sp["layer_s"], floor).sum())
 
 
+def right_nozzle_seconds(parts: Sequence[dict], *, profile: str, layer: float, quantity: int = 1,
+                         nozzle_of: Optional[Dict[str, str]] = None, tower_layers_right: int = 0) -> float:
+    """Seconds the slower right nozzle adds: slower walls and fill of its parts, the prime tower
+    layers it prints alone, and a longer preparation when no part is on the left nozzle."""
+    sp = SPEEDS.get(profile, SPEEDS["generic"])
+    nozzle_of = nozzle_of or {}
+    f = CALIBRATED["layer"] / layer if layer > 0 else 1.0      # as in print_seconds
+    extra = 0.0
+    on_right = on_left = 0
+    for p in parts:
+        if nozzle_of.get(p.get("colour", ""), "left") != "right":
+            on_left += 1
+            continue
+        on_right += 1
+        wall = min(p.get("wall_mm3", 0.0), p["shell_mm3"])
+        extra += (wall * sp["shell_s_mm3"] * f * (sp.get("right_wall_x", 1.0) - 1.0)
+                  + ((p["shell_mm3"] - wall) * sp["shell_s_mm3"] + p["core_mm3"] * sp["core_s_mm3"] * f)
+                  * (sp.get("right_other_x", 1.0) - 1.0))
+    extra *= max(1, int(quantity))
+    extra += tower_layers_right * sp.get("right_tower_layer_s", 0.0)
+    if on_right and not on_left:
+        extra += sp.get("right_only_s", 0.0)
+    return extra
+
+
 def estimate(parts: Sequence[dict], *, profile: str, material: str, layer: float, quantity: int = 1,
              nozzle_of: Optional[Dict[str, str]] = None, supports: bool = False,
              nozzle: Optional[float] = None) -> dict:
@@ -292,16 +344,19 @@ def estimate(parts: Sequence[dict], *, profile: str, material: str, layer: float
     layers = int(round(top / layer)) if layer > 0 else 0
     ch = colour_changes([{"colour": p.get("colour", ""), "z": p["z"]} for p in parts], layer, nozzle_of or {})
     if sp["switch_s"] == 0 and ch["switches"]:      # one-nozzle printer: a switch is a swap
-        ch = {"swaps": ch["swaps"] + ch["switches"], "switches": 0}
+        ch = dict(ch, swaps=ch["swaps"] + ch["switches"], switches=0, tower_layers_right=0)
     two = 1 if ch["switches"] else 0
-    purge_g = ch["swaps"] * sp["swap_g"] + ch["switches"] * sp["switch_g"] + two * sp["second_nozzle_g"]
+    purge_g = (ch["swaps"] * sp["swap_g"] + ch["switches"] * sp["switch_g"] + two * sp["second_nozzle_g"]
+               + ch["tower_layers"] * sp.get("tower_layer_g", 0.0))
     density = DENSITY.get((material or "PLA").upper(), DENSITY["PLA"])
     model_mm3 = (shell + core) * q
     model_g = model_mm3 * density / 1000.0
     total_g = model_g + purge_g
     print_s = print_seconds(parts, profile=profile, layer=layer, quantity=q)
     colour_s = ch["swaps"] * sp["swap_s"] + ch["switches"] * sp["switch_s"] + two * sp["second_nozzle_s"]
-    total_s = sp["prep_s"] + print_s + colour_s
+    right_s = (right_nozzle_seconds(parts, profile=profile, layer=layer, quantity=q, nozzle_of=nozzle_of,
+                                    tower_layers_right=ch["tower_layers_right"]) if sp["switch_s"] else 0.0)
+    total_s = sp["prep_s"] + print_s + colour_s + right_s
     noz = nozzle if nozzle is not None else max((p.get("nozzle", 0.4) for p in parts), default=0.4)
     infill = max((p.get("infill", 0.0) for p in parts), default=0.0)
     why = calibration_scope(profile=profile, material=material, nozzle=noz, layer=layer, supports=supports,
@@ -333,8 +388,10 @@ def estimate(parts: Sequence[dict], *, profile: str, material: str, layer: float
         "minutes_range": [_floor5(minutes * (1 - t_sp[0])), _ceil5(minutes * (1 + t_sp[1]))],
         "prep_min": round(sp["prep_s"] / 60.0),
         "colour_min": round(colour_s / 60.0),
+        "right_nozzle_min": round(right_s / 60.0),
         "swaps": ch["swaps"],
         "nozzle_switches": ch["switches"],
+        "tower_layers": ch["tower_layers"],
     }
 
 
@@ -375,6 +432,8 @@ def describe(est: dict, label: str, material: str) -> str:
     if est["swaps"] or est["nozzle_switches"]:
         s += (f"; colour changes: {est['swaps']} swap(s) on one nozzle, {est['nozzle_switches']} nozzle switch(es), "
               f"about {est['colour_min']} min and {est['purge_g']:g} g of purge")
+    if est.get("right_nozzle_min"):
+        s += f"; the right nozzle prints slower: about {est['right_nozzle_min']} min of the total"
     if est["quantity"] > 1:
         s += f"; {est['quantity']} copies"
     other = est.get("other_nozzles")

@@ -225,10 +225,12 @@ def _build_one(g, args, name, out_dir, profile, project_dir, variants):
         pe = run_estimate(plan["nozzles"])
         options.append(dict(plan, minutes=pe["minutes"], grams=pe["grams"], estimate=pe))
     if options:
-        best = min(options, key=lambda o: o["estimate"]["minutes"])   # ties keep all_left: nothing to load
+        # fastest plan; equal minutes: less filament; still equal: the first (all_left, nothing to load)
+        best = min(options, key=lambda o: (o["estimate"]["minutes"], o["estimate"]["grams"]))
         e = best["estimate"]
         nozzle_of = best["nozzles"]
-        others = [o for o in options if o is not best]
+        others = sorted((o for o in options if o is not best),
+                        key=lambda o: (o["estimate"]["minutes"], o["estimate"]["grams"]))
         if others:
             e["other_nozzles"] = {k: others[0][k] for k in ("option", "label", "minutes", "grams")}
     else:
@@ -240,8 +242,8 @@ def _build_one(g, args, name, out_dir, profile, project_dir, variants):
     label = f"{args.variant}, {st['walls']} walls, {st['infill']:g}% infill, {g['LAYER']:g} mm layers"
     print(est.describe(e, label, g["MATERIAL"]))
     if len(options) > 1:
-        print(f"nozzles: {best['label']} is faster (~{best['minutes']} min, {best['grams']:g} g) than "
-              f"{others[0]['label']} (~{others[0]['minutes']} min, {others[0]['grams']:g} g)")
+        rest = "; ".join(f"{o['label']} (~{o['minutes']} min, {o['grams']:g} g)" for o in others)
+        print(f"nozzles: {best['label']} is faster (~{best['minutes']} min, {best['grams']:g} g) than {rest}")
     elif profile["nozzles"] >= 2 and len(set(colours.values())) > 1 and not external:
         print("nozzles: EXTERNAL_SPOOL = False, every colour on the left nozzle (AMS)")
 

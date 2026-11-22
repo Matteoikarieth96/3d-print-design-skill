@@ -72,7 +72,7 @@ class CalibrationCsvTests(unittest.TestCase):
                 parts = [_mv(_tube(*dims), row)]
             else:   # a 40 x 40 x 10 block: 30 mm in colour a, a 10 mm stripe in colour b
                 parts = [_mv(_box(30, 40, 10, -5), row, "a"), _mv(_box(10, 40, 10, 15), row, "b")]
-                nozzle_of = {"a": "left", "b": row["nozzles"].split("+")[1]}
+                nozzle_of = dict(zip("ab", row["nozzles"].split("+")))
             e = estimate.estimate(parts, profile="bambu-x2d", material=row["material"],
                                   layer=float(row["layer_mm"]), nozzle_of=nozzle_of)
             with self.subTest(part=row["part"], walls=row["walls"], infill=row["infill_pct"]):
@@ -81,7 +81,7 @@ class CalibrationCsvTests(unittest.TestCase):
                 self.assertAlmostEqual(e["grams"], float(row["model_g"]), places=1)
                 self.assertTrue(e["in_calibration"])
             checked += 1
-        self.assertGreaterEqual(checked, 31)
+        self.assertGreaterEqual(checked, 33)
 
     def test_every_row_is_inside_the_range_shown(self):
         for row in _rows():
@@ -103,6 +103,47 @@ class CalibrationCsvTests(unittest.TestCase):
         self.assertIn("estimate-calibration.csv", md)
         self.assertIn("02.09.01.70", md)
         self.assertIn("NOT covered", md)
+
+
+class RightNozzleTests(unittest.TestCase):
+    """The right nozzle prints slower (2026-11 run): the main colour belongs on the left one."""
+    ROW = {"layer_mm": "0.2", "walls": "2", "infill_pct": "15"}
+
+    def est(self, parts, nozzle_of):
+        return estimate.estimate(parts, profile="bambu-x2d", material="PLA", layer=0.2, nozzle_of=nozzle_of)
+
+    def test_body_on_the_right_nozzle_is_slower_than_the_accent(self):
+        parts = [_mv(_box(30, 40, 10, -5), self.ROW, "a"), _mv(_box(10, 40, 10, 15), self.ROW, "b")]
+        accent, body = self.est(parts, {"b": "right"}), self.est(parts, {"a": "right"})
+        self.assertGreater(body["minutes_exact"], accent["minutes_exact"])
+        self.assertEqual(body["grams"], accent["grams"])            # same purge either way
+        self.assertEqual(self.est(parts, {})["right_nozzle_min"], 0)
+        self.assertLess(accent["minutes"], self.est(parts, {})["minutes"] / 2)   # 50 swaps cost far more
+
+    def test_right_nozzle_alone_takes_longer(self):
+        parts = [_mv(_box(40, 40, 10), self.ROW, "a")]
+        left, right = self.est(parts, {}), self.est(parts, {"a": "right"})
+        self.assertEqual((right["swaps"], right["nozzle_switches"]), (0, 0))
+        self.assertGreater(right["minutes_exact"] - left["minutes_exact"], 3)     # slicer: 22 against 17 min
+        self.assertIn("right nozzle prints slower", estimate.describe(right, "standard", "PLA"))
+        self.assertNotIn("right nozzle prints slower", estimate.describe(left, "standard", "PLA"))
+
+    def test_prime_tower_layers_below_the_last_change(self):
+        spans = [{"colour": "base", "z": (0.0, 4.0)}, {"colour": "star", "z": (3.4, 4.0)}]
+        left = estimate.colour_changes(spans, 0.2, {})
+        self.assertEqual(left, {"swaps": 3, "switches": 0, "tower_layers": 17, "tower_layers_right": 0})
+        star = estimate.colour_changes(spans, 0.2, {"star": "right"})
+        self.assertEqual(star, {"swaps": 0, "switches": 3, "tower_layers": 17, "tower_layers_right": 0})
+        base = estimate.colour_changes(spans, 0.2, {"base": "right"})
+        self.assertEqual(base["tower_layers_right"], 17)
+        one = estimate.colour_changes(spans[:1], 0.2, {})
+        self.assertEqual((one["tower_layers"], one["tower_layers_right"]), (0, 0))
+
+    def test_generic_profile_has_no_right_nozzle(self):
+        parts = [_mv(_box(40, 40, 10), self.ROW, "a")]
+        a = estimate.estimate(parts, profile="generic", material="PLA", layer=0.2, nozzle_of={})
+        b = estimate.estimate(parts, profile="generic", material="PLA", layer=0.2, nozzle_of={"a": "right"})
+        self.assertEqual(a["minutes_exact"], b["minutes_exact"])
 
 
 class EstimateScopeTests(unittest.TestCase):

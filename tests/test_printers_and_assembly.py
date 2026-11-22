@@ -58,8 +58,12 @@ class ProfileTests(unittest.TestCase):
         x2d = printers.get("bambu-x2d")
         parts = [{"stl": "star.stl", "colour": "yellow", "layers": 3, "volume_mm3": 600},
                  {"stl": "base.stl", "colour": "black", "layers": 20, "volume_mm3": 24000}]
+        # the main colour stays on the left nozzle (the fast one), the accent goes on the right one
         self.assertEqual(printers.suggest_nozzles(x2d, parts, "PLA", mixed_layers=3),
-                         {"black": "right", "yellow": "left"})
+                         {"black": "left", "yellow": "right"})
+        plans = {p["option"]: p["nozzles"] for p in printers.nozzle_options(x2d, parts, "PLA", mixed_layers=3)}
+        self.assertEqual(list(plans), ["all_left", "accent_right", "dominant_right"])
+        self.assertEqual(plans["dominant_right"], {"black": "right", "yellow": "left"})
         self.assertEqual(set(printers.suggest_nozzles(x2d, parts, "TPU", mixed_layers=3).values()), {"left"})
         self.assertEqual(printers.suggest_nozzles(printers.get("generic"), parts, "PLA"), {})
         # colours only change by height: everything on the left nozzle (x2d-print colour rule 2)
@@ -239,12 +243,15 @@ class BuildHandoffTests(unittest.TestCase):
         for p in parts:
             self.assertTrue((out / p["stl"]).is_file())
             self.assertIsNone(p["filament"])
-        # colours meet in only 3 layers: 3 swaps on the left nozzle (about 6 min) beat heating the
-        # right nozzle (about 10 min); real slices: 38 min all left, 41 min black on the right
-        self.assertEqual(job["design"]["suggested_nozzles"], {"black": "left", "yellow": "left"})
+        # colours meet in only 3 layers. Real slices: 34 min with the star on the right nozzle, 37 to
+        # 38 min all left (3 swaps), 41 min with the base on the right nozzle (it prints slower)
+        self.assertEqual(job["design"]["suggested_nozzles"], {"black": "left", "yellow": "right"})
         self.assertEqual(job["design"]["colour_layers"]["mixed_layers"], 3)
         opts = {o["option"]: o for o in job["design"]["nozzle_options"]}
+        self.assertEqual(opts["accent_right"]["nozzles"], {"black": "left", "yellow": "right"})
         self.assertEqual(opts["dominant_right"]["nozzles"], {"black": "right", "yellow": "left"})
+        self.assertLessEqual(opts["accent_right"]["minutes"], opts["all_left"]["minutes"])
+        self.assertLess(opts["accent_right"]["grams"], opts["all_left"]["grams"])
         self.assertLess(opts["all_left"]["minutes"], opts["dominant_right"]["minutes"])
         self.assertIn("other nozzle choice", res.stdout)
         meta = json.loads((out / "coaster-star.json").read_text())
@@ -268,13 +275,13 @@ class BuildHandoffTests(unittest.TestCase):
         return params + geom + tail
 
     def test_separate_objects_of_two_colours_share_layers(self):
-        """Two discs side by side: every layer holds both colours, so the black one goes right."""
+        """Two discs side by side: every layer holds both colours, so the smaller one goes right."""
         res = self.build(self.two_discs())
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         job = json.loads((self.project / "out" / "x2d-job.json").read_text())
         self.assertEqual(len(job["objects"]), 2)
         self.assertEqual(job["design"]["colour_layers"]["mixed_layers"], 15)
-        self.assertEqual(job["design"]["suggested_nozzles"], {"black": "right", "yellow": "left"})
+        self.assertEqual(job["design"]["suggested_nozzles"], {"black": "left", "yellow": "right"})
         self.assertTrue(job["design"]["external_spool"])
         # no spool on the external holder: everything on the left nozzle, even if slower
         res = self.build(self.two_discs(external=False))

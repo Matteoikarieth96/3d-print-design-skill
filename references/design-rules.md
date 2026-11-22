@@ -174,3 +174,37 @@ exactly like the original, so a glance at the viewer is not a check.
 - In the print sheet, state handedness in words tied to the real world ("with
   the flat face on the desk and the cable coming from the front, the boss is on
   the right"), and ask the user to confirm against the real object.
+
+## 15. Hollow parts (the default when nothing carries load)
+
+Low infill is not hollow: a solid model still gets walls, 5 top and 3 bottom
+layers and a lattice inside. For an ornament, a figure, a cover or a toy,
+model a thin shell around a real cavity instead:
+
+- **Shell:** 2 extrusion lines, 0.9 mm with a 0.4 mm nozzle, and `WALLS = 2`
+  so the whole shell is walls. Offer 3 lines (1.3 mm) as the `strong` version
+  with `cad.vary`, not as the default.
+- **Roof of the cavity:** it must print without supports. Close it with a
+  cone or a teardrop at the project's overhang limit (section 4), built as a
+  true cone, never a flat or domed ceiling. A hanging loop or a neck on top
+  is a good place to end the cone.
+- **Vent hole:** a cavity sealed inside the part is a second body that
+  touches nothing, so printcheck refuses it. A 2 to 3 mm hole on the hidden
+  face (usually the bottom) joins it to the outside and makes one body again.
+- **Engraved marks:** thicken the shell behind the mark by the engraving
+  depth, and blend back to the normal thickness without a step, so the wall
+  under the mark keeps its 2 lines.
+- **Flat tops** (boxes, plaques, bases): a cavity under a flat top needs a
+  bridge or supports. Keep these solid in the model and use the light version
+  (2 walls, 10 % infill); in the slicer the `lightning` infill pattern fills
+  only under the top surfaces.
+- **Not hollow:** parts that carry load (hooks, brackets, holders), fits,
+  threads, screw bosses and snap arms, parts thinner than about 6 mm (nothing
+  to save), and stands that need weight to stay put.
+- **With several colours:** a hollow part has no infill to flush into, so all
+  the purge goes to the prime tower: the nozzle plan matters more
+  ([printers.md](printers.md)).
+
+Say in the plan and in the print sheet that the part is hollow, how thick the
+shell is and where the vent hole sits. Measured on a 60 mm ball with a 0.9 mm
+shell: 14.4 g and 59 min in one colour.

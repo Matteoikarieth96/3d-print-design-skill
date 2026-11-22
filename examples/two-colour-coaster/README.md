@@ -16,13 +16,15 @@ one; no supports; quantity 1.
   The pocket is cut with the star's own outline: the parts touch without
   sharing volume.
 - Colours meet in 3 of 20 layers (the star sits in a pocket, so those layers
-  hold black and yellow). The build estimates both nozzle plans: all on the
-  left nozzle (AMS, 3 colour changes) at about 36 min and 19.8 g, and black on
-  the right nozzle (external spool, about 10 min once to heat it) at about
-  41 min and 18.7 g. With so few shared layers **all on the left is faster**,
-  so the hand-off suggests black and yellow both on the left; the other plan
-  is in `design.nozzle_options` and in the build output. `EXTERNAL_SPOOL = True`
-  only allows the right nozzle; `False` would rule it out.
+  hold black and yellow). The build estimates three nozzle plans: yellow on
+  the right nozzle (external spool) at about 36 min and 18.6 g, all on the
+  left nozzle (AMS, 3 colour changes) at about 36 min and 20.3 g, and black on
+  the right nozzle at about 41 min and 18.6 g (the right nozzle prints slower,
+  so the base takes longer there). The hand-off **suggests yellow on the right
+  nozzle and black on the left**: the same minutes as all left and less purge.
+  Real slices: 34, 37 and 41 min. The other plans are in
+  `design.nozzle_options` and in the build output. `EXTERNAL_SPOOL = True`
+  only allows the right nozzle; `False` keeps both colours in the AMS.
 
 **Build:**
 

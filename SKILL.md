@@ -52,6 +52,12 @@ Read [references/intake.md](references/intake.md). Ask in the user's language.
   something heavy): always ask what it holds and how (weight in kg, pulled or
   pushed, a shock or steady), even in round 1, and never recommend the light
   version for them.
+- **Hollow by default.** A part that carries no load (ornament, figure, cover,
+  toy, sign) is designed as light as its shape allows, without asking: a thin
+  shell around a real cavity, not a solid full of infill
+  ([references/design-rules.md](references/design-rules.md), section 15). Say
+  so in the plan (Step 2) so the person can ask for a solid or stronger one.
+  Never for parts that carry load, fits, threads or screw bosses.
 - Round 2 (only if needed): heat/outdoor, supports allowed, orientation
   constraints, quantity, looks vs strength, deadline.
 - **Logo, text or a picture on the part:** say plainly what the skill can do:
@@ -192,20 +198,24 @@ rebuild with `--variants`):
 - **smaller or thinner** where nothing has to fit (at 80 % size a solid part
   needs about half the filament; a part that is mostly walls and skin, like
   most prints at 15 % infill, about two thirds);
+- **hollow**: a real cavity saves more than low infill; it is the default for
+  parts that carry no load (design-rules, section 15);
 - **colours**: colours that only change by height cost one change each;
   colours side by side in many layers cost about 2 minutes and 0.7 g per layer
   on the same nozzle. On the X2D a second colour on the other nozzle saves that
-  per-change purge but costs about 10 minutes once to heat and prime the
-  second nozzle: the build estimates both plans and suggests the faster one
-  ("other nozzle choice: ~X min, Y g" shows the alternative). Moving accents
-  to the top or bottom 3 layers helps either way; one colour is fastest;
+  purge: it costs about 4.5 minutes once, then about 24 s and 0.1 g per shared
+  layer. Keep the main colour on the left nozzle (AMS) and put the accent on
+  the external spool: the right nozzle prints walls about 1.5 times slower.
+  The build estimates every plan and suggests the fastest ("other nozzle
+  choice: ~X min, Y g" shows the next one). Fewer shared layers help most: a
+  lower logo, or accents in the top or bottom 3 layers; one colour is fastest;
 - **quantity**: copies on one plate share the printer preparation (about 6 min).
 
 The numbers are estimates before slicing. On the Bambu Lab X2D with PLA, a
 0.4 mm nozzle, 0.2 mm layers, no supports and infill up to 40 %, they were
-fitted on 34 real slices (time within 13 %, grams within 10 %) and checked on
-18 more slices of about 15 parts (16 strictly out of sample; time within 32 %,
-mostly slower on parts with many small holes, mean 8 %; grams within 16 %).
+fitted on 43 real slices (time within 13 %, grams within 10 %) and checked on
+23 more slices of about 17 parts (21 strictly out of sample; time within 32 %,
+mostly slower on parts with many small holes, mean 7 %; grams within 16 %).
 The range shown was set after that check, wide enough to hold every slice
 ([references/estimate-calibration.md](references/estimate-calibration.md)).
 Outside that field (other printer, material, nozzle or layer height, supports,
@@ -285,7 +295,7 @@ Hand over, with paths:
    that the template and the filament numbers are set in x2d-print, from the
    person's own Bambu Studio. It also carries the chosen version's settings
    (walls, infill, layer height), the other versions and, with two or more
-   colours, both nozzle plans with their minutes and grams (`nozzle_options`),
+   colours, every nozzle plan with its minutes and grams (`nozzle_options`),
    so the .3mf prints what was estimated. See [references/printers.md](references/printers.md).
 
 ## Step 10: the user slices and prints

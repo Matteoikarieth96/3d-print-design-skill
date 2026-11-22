@@ -137,14 +137,20 @@ def nozzle_options(profile: dict, parts: Sequence[dict], material: str, mixed_la
 
     On the X2D the AMS feeds the left nozzle and the external spool the right
     one. "all_left" (AMS only, nothing on the external holder) is always a
-    plan. "dominant_right" (the colour with the most layers, then the most
-    volume, on the external spool; accents in the AMS) is added only when it
-    can help: two or more colours that share layers (`mixed_layers` > 0,
-    counted over every part on the plate), a material the right nozzle takes
-    (not TPU) and a spool that can go on the external holder. A nozzle switch
-    costs no colour purge, but the second nozzle takes about 10 minutes to heat
-    and prime once; which plan is faster depends on how many layers mix
-    colours, so the caller estimates both and picks the faster.
+    plan. Two more are added only when they can help: two or more colours that
+    share layers (`mixed_layers` > 0, counted over every part on the plate), a
+    material the right nozzle takes (not TPU) and a spool that can go on the
+    external holder:
+    - "accent_right": the main colour (most layers, then most volume) stays in
+      the AMS on the left nozzle and the largest other colour goes on the
+      external spool. The left nozzle is the fast one, so this is usually the
+      quickest two-nozzle plan;
+    - "dominant_right": the main colour on the external spool, the others in
+      the AMS. Same purge, but the main colour is printed by the slower right
+      nozzle; with three or more colours it can still win, because it takes
+      the colour every layer needs off the nozzle that swaps.
+    A nozzle switch costs no colour purge, only a prime tower layer; the caller
+    estimates every plan and picks the fastest.
     """
     if profile["name"] != "bambu-x2d" or not parts:
         return []
@@ -154,22 +160,27 @@ def nozzle_options(profile: dict, parts: Sequence[dict], material: str, mixed_la
     if (len(colours) < 2 or (material or "").upper() in profile.get("right_nozzle_refuses", ())
             or not mixed_layers or not external_spool):
         return plans
-    dominant = max(colours, key=lambda c: (colours[c]["layers"], colours[c]["volume_mm3"]))
-    plans.append({"option": "dominant_right", "label": f"{dominant} on the right nozzle (external spool)",
-                  "nozzles": {c: ("right" if c == dominant else "left") for c in colours}})
+    ranked = sorted(colours, key=lambda c: (colours[c]["layers"], colours[c]["volume_mm3"]), reverse=True)
+    dominant, accent = ranked[0], ranked[1]
+    for option, on_right in (("accent_right", accent), ("dominant_right", dominant)):
+        plans.append({"option": option, "label": f"{on_right} on the right nozzle (external spool)",
+                      "nozzles": {c: ("right" if c == on_right else "left") for c in colours}})
     return plans
 
 
 def suggest_nozzles(profile: dict, parts: Sequence[dict], material: str, mixed_layers: Optional[int] = None,
                     external_spool: bool = True) -> Dict[str, str]:
-    """Rule-of-thumb plan without an estimate: the dominant colour right when colours share layers.
+    """Rule-of-thumb plan without an estimate: when colours share layers, the main colour stays on
+    the left nozzle (AMS) and the largest other colour goes on the right one (external spool).
 
     The build uses nozzle_options() and the time estimate instead; this stays
     for callers that have no estimate (one colour, colours only by height and
     TPU always give all left).
     """
     plans = nozzle_options(profile, parts, material, mixed_layers, external_spool)
-    return plans[-1]["nozzles"] if plans else {}
+    by_name = {p["option"]: p for p in plans}
+    chosen = by_name.get("accent_right") or by_name.get("all_left")
+    return chosen["nozzles"] if chosen else {}
 
 
 def slicer_settings(*, walls: int, infill: float, layer: float, top_layers: int, bottom_layers: int,

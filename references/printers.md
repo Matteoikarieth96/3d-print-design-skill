@@ -26,14 +26,20 @@ checks them again against the person's Bambu Studio when it builds the project.
   the design is checked against **235.5 x 256 x 256 mm**, plus the usual 5 mm margin.
   The prime tower (35 mm wide) also takes plate space in a multicolour print: a part near
   the full width may need its own plate.
-- **Two nozzles.** Left: direct drive, fed by the AMS (up to 4 colours per AMS). Right:
-  Bowden, fed by the external spool, **no TPU**. Changing colour on the same nozzle costs
-  about 2 minutes and 0.7 g of purge each time. A second nozzle saves that per-change purge
-  but costs about 10 minutes once (heating and priming it), plus a short switch each layer.
+- **Two nozzles.** Left: direct drive, fed by the AMS (up to 4 colours per AMS), the
+  fast one. Right: Bowden, fed by the external spool, **no TPU**, and slower: Bambu
+  Studio's X2D process prints its outer walls at 50 mm/s against 200 mm/s on the left
+  nozzle, with a tenth of the acceleration. Changing colour on the same nozzle costs
+  about 2 minutes and 0.7 g of purge each time. A second nozzle saves that purge: it costs
+  about 4.5 minutes once, then about 24 s and 0.1 g for each layer the colours share. So
+  the **main colour stays on the left nozzle and the accent goes on the external spool**.
   Measured, total (of which purge): a 40 x 40 x 10 mm block takes 17 min and 6.9 g in one
   colour; with a 10 mm stripe in a second colour on the other nozzle 42 min and 12.6 g
   (of which 5.2 g purge); with both colours on one nozzle 2 h 04 min and 43.5 g (of which
-  36.1 g purge, 49 colour changes).
+  36.1 g purge, 49 colour changes). A hollow 60 mm ball with a logo inlay in 111 of its
+  357 layers: 59 min and 14.4 g in one colour; 1 h 47 min and 28.5 g (14.2 g purge) with
+  the logo on the right nozzle; 2 h 13 min and 28.5 g with the body on the right nozzle;
+  4 h 48 min and 87.8 g (73.5 g purge) with both colours on the left nozzle.
 - **Defaults:** 0.4 mm nozzle, 0.20 mm layers (process "0.20mm Standard @BBL X2D"),
   Textured PEI Plate (the bottom face takes its texture; the Cool Plate is not supported).
 - **One material per print.** PLA with PETG bonds poorly. All colours of one build use
@@ -47,14 +53,18 @@ checks them again against the person's Bambu Studio when it builds the project.
    accent out of the base with the same outline (`cad.difference(base, accent)`), as in
    `examples/two-colour-coaster`.
 2. **Nozzle plan chosen by time, when colours share layers.** The layers that hold two
-   colours are counted over every part on the plate. The build then estimates two plans:
-   all colours on the left nozzle (AMS, a purge on every shared layer) and the dominant
-   colour, the one spanning the most layers, on the right nozzle (external spool, about
-   10 minutes once to heat it, little purge). It suggests the faster one and records both,
-   with minutes and grams, in `design.nozzle_options`; the build output and the print
-   sheet show the alternative ("other nozzle choice: ~X min, Y g"). Few shared layers (the
-   two-colour coaster: 3 of 20) favour all left; many (two separate objects of different
-   colours side by side) favour the right nozzle. Set `EXTERNAL_SPOOL = False` in
+   colours are counted over every part on the plate. The build then estimates three
+   plans: all colours on the left nozzle (AMS, a purge on every shared layer); the main
+   colour, the one spanning the most layers, on the left nozzle and the largest accent
+   on the right one (external spool, little purge); and the main colour on the right
+   nozzle with the accents in the AMS. It suggests the fastest (equal minutes: the one
+   with less filament) and records them all, with minutes and grams, in
+   `design.nozzle_options`; the build output and the print sheet show the next one
+   ("other nozzle choice: ~X min, Y g"). With two colours the accent on the right nozzle
+   was the fastest plan in every object measured, even with few shared layers (the
+   two-colour coaster, 3 of 20: 34 min, against 37 all left and 41 with the base on the
+   right nozzle). The main colour on the right nozzle can still win with three or more
+   colours, when it is the only colour every layer needs. Set `EXTERNAL_SPOOL = False` in
    `build.py` when no spool can go on the external holder: everything then stays on the
    left nozzle. When colours only change by height (no layer holds two colours)
    everything stays on the left: one change per boundary. One colour: left nozzle only.
